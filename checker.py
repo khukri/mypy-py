@@ -419,9 +419,11 @@ class TypeChecker(NodeVisitor):
                 ilv = lv
                 lvalue_types.append(None)
                 index_lvalue_types.append((self.accept(ilv.base), ilv.index))
+                inferred.append(None)
             else:
                 lvalue_types.append(self.accept(lv))
                 index_lvalue_types.append(None)
+                inferred.append(None)
         
         if len(lvalues) == 1:
             # Single lvalue.
@@ -448,7 +450,7 @@ class TypeChecker(NodeVisitor):
             return [n]
     
     def infer_variable_type(self, names, init_type, context):
-        """Infer the type of initialized local variables from the type of the
+        """Infer the type of initialized variables from the type of the
         initializer expression.
         """
         if isinstance(init_type, Void):
@@ -469,7 +471,9 @@ class TypeChecker(NodeVisitor):
                     # Initializer with a tuple type.
                     if len(tinit_type.items) == len(names):
                         for i in range(len(names)):
-                            names[i].typ = Annotation(tinit_type.items[i], -1)
+                            if names[i]:
+                                names[i].typ = Annotation(tinit_type.items[i],
+                                                          -1)
                     else:
                         self.msg.incompatible_value_count_in_assignment(
                             len(names), len(tinit_type.items), context)
@@ -479,10 +483,12 @@ class TypeChecker(NodeVisitor):
                     # Initializer with an array type.
                     item_type = (init_type).args[0]
                     for j in range(len(names)):
-                        names[j].typ = Annotation(item_type, -1)
+                        if names[j]:
+                            names[j].typ = Annotation(item_type, -1)
                 elif isinstance(init_type, Any):
                     for k in range(len(names)):
-                        names[k].typ = Annotation(Any(), -1)
+                        if names[k]:
+                            names[k].typ = Annotation(Any(), -1)
                 else:
                     self.fail(messages.INCOMPATIBLE_TYPES_IN_ASSIGNMENT,
                               context)

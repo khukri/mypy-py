@@ -5,6 +5,7 @@ from mtypes import (
 from nodes import IfStmt, ForStmt, WhileStmt, WithStmt, TryStmt
 from nodes import function_type
 from output import OutputVisitor
+from typerepr import ListTypeRepr
 
 
 # Names present in mypy but not in Python. Imports of these names are removed
@@ -19,8 +20,10 @@ removed_names = {'re': ['Pattern', 'Match']}
 
 
 class PythonGenerator(OutputVisitor):
-    """Python backend. Translate semantically analyzed parse trees to Python.
-    Reuse most of the generation logic from the mypy pretty printer implemented
+    """Python backend.
+
+    Translate semantically analyzed parse trees to Python.  Reuse most
+    of the generation logic from the mypy pretty printer implemented
     in OutputVisitor.
     """
 
@@ -79,7 +82,10 @@ class PythonGenerator(OutputVisitor):
         if isinstance(t, Any):
             return t.repr.any_tok.pre
         elif isinstance(t, Instance):
-            return t.repr.components[0].pre
+            if isinstance(t.repr, ListTypeRepr):
+                return self.get_pre_whitespace(t.args[0])
+            else:
+                return t.repr.components[0].pre
         elif isinstance(t, Void):
             return t.repr.void.pre
         elif isinstance(t, TypeVar):
@@ -138,11 +144,14 @@ class PythonGenerator(OutputVisitor):
     
     def erased_type(self, t):
         if isinstance(t, Instance) or isinstance(t, UnboundType):
-            a = []
-            if t.repr:
-                for tok in t.repr.components:
-                    a.append(tok.rep())
-            return ''.join(a)
+            if isinstance(t.repr, ListTypeRepr):
+                return '__builtins__.list'
+            else:
+                a = []
+                if t.repr:
+                    for tok in t.repr.components:
+                        a.append(tok.rep())
+                return ''.join(a)
         elif isinstance(t, TupleType):
             return 'tuple' # FIX: aliasing?
         else:
@@ -156,6 +165,12 @@ class PythonGenerator(OutputVisitor):
         self.node(o.body.body[0].expr)
     
     def visit_overloaded_func_def(self, o):
+        """Translate overloaded function definition.
+
+        Overloaded functions are transformed into a single Python function that
+        performs argument type checks and length checks to dispatch to the
+        right implementation.
+        """
         indent = self.indent * ' '
         first = o.items[0]
         r = first.repr

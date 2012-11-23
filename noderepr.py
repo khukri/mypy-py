@@ -162,9 +162,9 @@ class RaiseStmtRepr:
 
 class TryStmtRepr:
     try_tok = None
-    except_toks = None  # list<Token>
-    name_toks = None    # list<Token>, may be empty
-    as_toks = None      # list<Token>, may be empty
+    except_toks = None  # Token[]
+    name_toks = None    # Token[], may be empty
+    as_toks = None      # Token[], may be empty
     else_tok = None
     finally_tok = None
     

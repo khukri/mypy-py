@@ -1,6 +1,7 @@
 from mtypes import Typ, TypeVars, TypeVarDef, Any, Void, UnboundType
 from typerepr import (
-    TypeVarsRepr, TypeVarDefRepr, AnyRepr, VoidRepr, CommonTypeRepr
+    TypeVarsRepr, TypeVarDefRepr, AnyRepr, VoidRepr, CommonTypeRepr,
+    ListTypeRepr
 )
 from lex import Token, Name
 
@@ -106,12 +107,13 @@ class TypeParser:
         return types, langle, rangle, commas
     
     def parse_any_type(self):
-        """Parse "any" type."""
+        """Parse 'any' type (or list of ... of any)."""
         tok = self.skip()
-        return Any(tok.line, AnyRepr(tok))
+        anyt = Any(tok.line, AnyRepr(tok))
+        return self.parse_optional_list_type(anyt)
     
     def parse_void_type(self):
-        """Parse "void" type."""
+        """Parse 'void' type."""
         tok = self.skip()
         return Void(None, tok.line, VoidRepr(tok))
     
@@ -144,8 +146,21 @@ class TypeParser:
             
             rangle = self.expect('>')
         
-        return UnboundType(name, args, line, CommonTypeRepr(components, langle,
-                                                            commas, rangle))
+        typ = UnboundType(name, args, line, CommonTypeRepr(components,
+                                                           langle,
+                                                           commas, rangle))
+        return self.parse_optional_list_type(typ)
+
+    def parse_optional_list_type(self, typ):
+        """Try to parse list types t[]."""
+        while self.current_token_str() == '[':
+            line = self.current_token().line
+            # TODO representation
+            lbracket = self.skip()
+            rbracket = self.expect(']')
+            typ = UnboundType('__builtins__.list', [typ], line,
+                              ListTypeRepr(lbracket, rbracket))
+        return typ
     
     # Helpers
     
