@@ -23,9 +23,11 @@ from typeanal import TypeAnalyser
 
 
 class SemanticAnal(NodeVisitor):
-    """Semantic analyzer that binds names and does various consistency
-    checks for a parse tree. Note that type checking is performed as a
-    separate pass.
+    """Semantically analyze parsed mypy files.
+
+    The analyzer binds names and does various consistency checks for a
+    parse tree. Note that type checking is performed as a separate
+    pass.
     """
     # Library search paths
     lib_path = None
@@ -45,12 +47,11 @@ class SemanticAnal(NodeVisitor):
     # All classes, from name to info (TODO needed?)
     types = None
     
-    stack = None     # Function local/type variable stack
+    stack = None         # Function local/type variable stack
     typ = None        # TypeInfo of enclosing class (or None)
     is_init_method = None # Are we now analysing __init__?
     is_function = None    # Are we now analysing a function/method?
-    is_local_ctx = None   # Are we now analysing a block (not at the
-                        # top level or at class body)?
+    block_depth = None     # Depth of nested blocks
     loop_depth = None      # Depth of breakable loops
     cur_mod_id = None      # Current module id (or None) (phase 2)
     imports = None    # Imported modules (during phase 2 analysis)
@@ -63,6 +64,7 @@ class SemanticAnal(NodeVisitor):
         self.stack = [None]
         self.imports = set()
         self.typ = None
+        self.block_depth = 0
         self.loop_depth = 0
         self.types = TypeInfoMap()
         self.lib_path = lib_path
@@ -71,11 +73,10 @@ class SemanticAnal(NodeVisitor):
         self.class_tvars = None
         self.is_init_method = False
         self.is_function = False
-        self.is_local_ctx = False
     
-    
+    #
     # First pass of semantic analysis
-    
+    #
     
     def anal_defs(self, defs, fnam, mod_id):
         """Perform the first analysis pass.
@@ -146,13 +147,12 @@ class SemanticAnal(NodeVisitor):
         for n in s.index:
             self.analyse_lvalue(n, False, True)
     
-    
+    #
     # Second pass of semantic analysis
-    
+    #
     
     # Do the bulk of semantic analysis in this second and final semantic
     # analysis pass (other than type checking).
-    
     
     def visit_file(self, file_node, fnam):
         self.errors.set_file(fnam)
@@ -169,6 +169,9 @@ class SemanticAnal(NodeVisitor):
             d.accept(self)
     
     def visit_func_def(self, defn):
+        if self.locals is not None:
+            self.fail('Nested functions not supported yet', defn)
+            return
         if self.typ:
             defn.info = self.typ
             if not defn.is_overload:
@@ -254,6 +257,9 @@ class SemanticAnal(NodeVisitor):
         scope[name] = SymbolTableNode(TVAR, None, None, None, id)
     
     def visit_type_def(self, defn):
+        if self.locals is not None or self.typ:
+            self.fail('Nested classes not supported yet', defn)
+            return
         self.typ = defn.info
         self.add_class_type_variables_to_symbol_table(self.typ)
         has_base_class = False
@@ -262,6 +268,7 @@ class SemanticAnal(NodeVisitor):
             self.typ.bases.append(defn.base_types[i])
             has_base_class = has_base_class or self.is_instance_type(
                                                         defn.base_types[i])
+        # Add 'object' as implicit base if there is no other base class.
         if (not defn.is_interface and not has_base_class and
                 defn.full_name != 'builtins.object'):
             defn.base_types.insert(0, self.object_type())
@@ -294,6 +301,8 @@ class SemanticAnal(NodeVisitor):
         ann.typ = self.anal_type(ann.typ)
     
     def visit_import(self, i):
+        if not self.check_import_at_toplevel(i):
+            return
         for id, as_id in i.ids:
             if as_id != id:
                 m = self.modules[id]
@@ -306,6 +315,8 @@ class SemanticAnal(NodeVisitor):
                                                      self.cur_mod_id)
     
     def visit_import_from(self, i):
+        if not self.check_import_at_toplevel(i):
+            return
         m = self.modules[i.id]
         for id, as_id in i.names:
             node = m.names.get(id, None)
@@ -316,19 +327,30 @@ class SemanticAnal(NodeVisitor):
                 self.fail("Module has no attribute '{}'".format(id), i)
     
     def visit_import_all(self, i):
+        if not self.check_import_at_toplevel(i):
+            return
         m = self.modules[i.id]
         for name, node in m.names.items():
             if not name.startswith('_'):
                 self.globals[name] = SymbolTableNode(node.kind, node.node,
                                                      self.cur_mod_id)
+
+    def check_import_at_toplevel(self, c):
+        if self.block_depth > 0:
+            self.fail("Imports within blocks not supported yet", c)
+            return False
+        else:
+            return True
     
-    
+    #
     # Statements
-    
+    #
     
     def visit_block(self, b):
+        self.block_depth += 1
         for s in b.body:
             s.accept(self)
+        self.block_depth -= 1
     
     def visit_block_maybe(self, b):
         if b:
@@ -370,7 +392,10 @@ class SemanticAnal(NodeVisitor):
     def analyse_lvalue(self, lval, nested=False, add_defs=False):
         if isinstance(lval, NameExpr):
             n = lval
-            if add_defs and n.name not in self.globals:
+            nested_global = (self.locals is None and self.block_depth > 0 and
+                             not self.typ)
+            if (add_defs or nested_global) and n.name not in self.globals:
+                # Define new global name.
                 v = Var(n.name)
                 v._full_name = self.qualified_name(n.name)
                 n.node = v
@@ -383,12 +408,22 @@ class SemanticAnal(NodeVisitor):
                                                               self.cur_mod_id)
             elif (self.locals is not None and n.name not in self.locals and
                   n.name not in self.global_decls[-1]):
+                # Define new local name.
                 v = Var(n.name)
                 n.node = v
                 n.is_def = True
                 n.kind = LDEF
                 self.add_local(v, n)
+            elif self.locals is None and (self.typ and
+                                          n.name not in self.typ.vars):
+                # Define a new attribute.
+                v = Var(n.name)
+                v.info = self.typ
+                n.node = v
+                n.is_def = True
+                self.typ.vars[n.name] = v
             else:
+                # Bind to an existing name.
                 lval.accept(self)
         elif isinstance(lval, MemberExpr):
             if not add_defs:
@@ -520,9 +555,9 @@ class SemanticAnal(NodeVisitor):
         for n in g.names:
             self.global_decls[-1].add(n)
     
-    
+    #
     # Expressions
-    
+    #
     
     def visit_name_expr(self, expr):
         n = self.lookup(expr.name, expr)
@@ -613,9 +648,9 @@ class SemanticAnal(NodeVisitor):
         for i in range(len(expr.types)):
             expr.types[i] = self.anal_type(expr.types[i])
     
-    
+    #
     # Helpers
-    
+    #
     
     def lookup(self, name, ctx):
         if name in self.global_decls[-1]:

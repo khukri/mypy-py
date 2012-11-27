@@ -312,27 +312,33 @@ class ExpressionChecker:
         else:
             return match
     
-    def matches_signature(self, arg_types, is_var_arg, typ):
-        """Determine whether argument types match the given
-        signature. If isVarArg is True, the caller uses varargs.
+    def matches_signature(self, arg_types, is_var_arg, callee):
+        """Determine whether argument types match the signature.
+
+        If is_var_arg is True, the caller uses varargs.
         """
-        if not is_valid_argc(len(arg_types), False, typ):
+        if not is_valid_argc(len(arg_types), False, callee):
             return False
         
         if is_var_arg:
             if not self.is_valid_var_arg(arg_types[-1]):
                 return False
-            rest = None
             arg_types, rest = expand_caller_var_args(arg_types,
-                                                     typ.max_fixed_args())
-        
-        for i in range(len(arg_types)):
-            if not is_subtype(erasetype.erase_type(arg_types[i],
-                                                   self.chk.basic_types()),
-                              erasetype.erase_type(
-                                  replace_type_vars(typ.arg_types[i]),
-                                  self.chk.basic_types())):
+                                                     callee.max_fixed_args())
+
+        # Fixed function arguments.
+        func_fixed = callee.max_fixed_args()
+        for i in range(min(len(arg_types), func_fixed)):
+            if not is_subtype(self.erase(arg_types[i]),
+                              self.erase(
+                                  callee.arg_types[i])):
                 return False
+        # Function varargs.
+        if callee.is_var_arg:
+            for i in range(func_fixed, len(arg_types)):
+                if not is_subtype(self.erase(arg_types[i]),
+                                  self.erase(callee.arg_types[func_fixed])):
+                    return False
         return True
     
     def apply_generic_arguments(self, callable, types, implicit_type_vars, context):
@@ -341,7 +347,7 @@ class ExpressionChecker:
         'def [int] (int) -> int'. Here '[int]' is an implicit bound type
         variable.
         
-        Note that each type can be nil; in this case, it will not be applied.
+        Note that each type can be None; in this case, it will not be applied.
         """
         tvars = []
         for v in implicit_type_vars:
@@ -732,7 +738,7 @@ class ExpressionChecker:
                     isinstance(typ, Any))
     
     def is_list_instance(self, t):
-        """Is the argument an instance type list<...>?"""
+        """Is the argument an instance type ...[]?"""
         return (isinstance(t, Instance) and
                 (t).typ.full_name() == 'builtins.list')
     
@@ -759,6 +765,10 @@ class ExpressionChecker:
         for n in a:
             r.append(self.unwrap(n))
         return r
+
+    def erase(self, type):
+        """Replace type variable types in type with any."""
+        return erasetype.erase_type(type, self.chk.basic_types())
 
 
 def is_valid_argc( nargs, is_var_arg, callable):

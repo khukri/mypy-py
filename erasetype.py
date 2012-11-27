@@ -1,19 +1,21 @@
 from mtypes import (
     Typ, TypeVisitor, UnboundType, ErrorType, Any, Void, NoneTyp, Instance,
-    TypeVar, Callable, TupleType
+    TypeVar, Callable, TupleType, Overloaded
 )
 import checker
 
 
 def erase_type( typ, basic):
-    """Erase any type variables from a type. Also replace complex types (tuple,
-    function) with the corresponding concrete types.
+    """Erase any type variables from a type.
+
+    Also replace tuple types with the corresponding concrete types. Replace
+    callable types with empty callable types.
     
     Examples:
       A -> A
       B<X> -> B<any>
       tuple<A, B> -> tuple
-      func<...> -> function
+      func<...> -> func<void>
       """
     return typ.accept(EraseTypeVisitor(basic))
 
@@ -44,7 +46,12 @@ class EraseTypeVisitor(TypeVisitor):
         return Any()
     
     def visit_callable(self, t):
-        return self.basic.function
+        # We must preserve the type object flag for overload resolution to
+        # work.
+        return Callable([], 0, False, Void(), t.is_type_obj())
+
+    def visit_overloaded(self, t):
+        return t.items()[0].accept(self)
     
     def visit_tuple_type(self, t):
         return self.basic.tuple

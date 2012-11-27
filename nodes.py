@@ -901,7 +901,7 @@ class Annotation(Node):
 
 class TypeApplication(Node):
     expr = None   # Node
-    types = None  # list<mtypes.Typ>
+    types = None  # mtypes.Typ[]
     
     def __init__(self, expr, types):
         self.expr = expr

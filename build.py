@@ -104,12 +104,14 @@ def default_lib_path():
 
 
 class BuildManager:
-    """This is the central class for building a mypy program. It coordinates
-    parsing, import processing, semantic analysis and type checking. It manages
-    state objects that actually perform the build steps.
+    """This is the central class for building a mypy program.
+
+    It coordinates parsing, import processing, semantic analysis and
+    type checking. It manages state objects that actually perform the
+    build steps.
     """
     do_type_check = None    # Do we perform a type check?
-    lib_path = None    # Library path for looking up modules
+    lib_path = None        # Library path for looking up modules
     sem_anal = None # Semantic analyzer
     checker = None   # Type checker
     errors = None         # For reporting all errors
@@ -134,10 +136,12 @@ class BuildManager:
     
     def \
                 process(self, initial_state):
-        """Perform a build. The argument is a state that represents
-        tha main program file. This method should only be called once
-        per a build manager object.  The return values are identical
-        to the return values of Build.
+        """Perform a build.
+
+        The argument is a state that represents tha main program
+        file. This method should only be called once per a build
+        manager object.  The return values are identical to the return
+        values of Build.
         """
         self.states.append(initial_state)
         
@@ -158,9 +162,9 @@ class BuildManager:
             self.errors.set_import_context(next.import_context)
             next.process()
         
-        # Raise exception if the build failed.
-        if self.errors.is_errors():
-            self.errors.raise_error()
+            # Raise exception if the build failed.
+            if self.errors.is_errors():
+                self.errors.raise_error()
         
         # If there were no errors, all files should have been fully processed.
         for s in self.states:
@@ -209,9 +213,9 @@ class BuildManager:
     
     def all_imported_modules(self, file):
         """Return tuple (module id, line number of import) for all
-        modules imported in a file.  TODO also find imports not at the
-        top level of the file
+        modules imported in a file.
         """
+        # TODO also find imports not at the top level of the file
         res = []
         for d in file.defs:
             if isinstance(d, Import):
@@ -244,8 +248,9 @@ def path_relative_to_program_path( dir):
 
 
 def fix_path(p):
-    """Remove current working directory prefix from p, if present. If
-    the result would be empty, return '.' instead.
+    """Remove current working directory prefix from p, if present.
+
+    If the result would be empty, return '.' instead.
     """
     cur = os.getcwd()
     # Add separator to the end of the path, unless one is already present.

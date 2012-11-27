@@ -39,8 +39,10 @@ class ErrorInfo:
 
 
 class Errors:
-    """Container that generates and keeps tracks of compile errors and
-    the current error context.
+    """Container for compile errors.
+
+    This class generates and keeps tracks of compile errors and the
+    current error context (nested imports).
     """
     # List of generated error messages.
     error_info = None

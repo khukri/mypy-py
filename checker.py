@@ -391,7 +391,7 @@ class TypeChecker(NodeVisitor):
         """
         # TODO support chained assignment x = y = z
         if len(s.lvalues) > 1:
-            self.fail('Chained assignment not supported yet', s)
+            self.msg.not_implemented('chained assignment', s)
 
         self.check_assignments(self.expand_lvalues(s.lvalues[0]), s.rvalue)
 
@@ -666,15 +666,28 @@ class TypeChecker(NodeVisitor):
             self.accept(s.else_body)
     
     def exception_type(self, n):
-        if isinstance(n, NameExpr) and isinstance((n).node,
-                                                  TypeInfo):
-            return Instance((n).node, [])
+        if isinstance(n, NameExpr):
+            name = n
+            if isinstance(name.node, TypeInfo):
+                return self.check_exception_type(name.node, n)
+        elif isinstance(n, MemberExpr):
+            m = n
+            if isinstance(m.node, TypeInfo):
+                return self.check_exception_type(m.node, n)
         elif isinstance(self.expr_checker.unwrap(n), TupleExpr):
             self.fail('Multiple exception types not supported yet', n)
-        else:
-            self.fail('Unsupported exception type', n)
             return Any()
-    
+        self.fail('Unsupported exception', n)
+        return Any()
+
+    def check_exception_type(self, info, context):
+        t = Instance(info, [])
+        if is_subtype(t, self.named_type('builtins.BaseException')):
+            return t
+        else:
+            self.fail(messages.INVALID_EXCEPTION_TYPE, context)
+            return Any()
+
     def visit_for_stmt(self, s):
         """Type check a for statement."""
         iterable = self.accept(s.expr)
