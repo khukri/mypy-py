@@ -117,8 +117,16 @@ def fail( msg):
 
 
 def is_stub( path):
-    # TODO make the check more precise
-    return path.startswith('stubs/') or '/stubs/' in path
+    """Does path refer to a stubs file?
+
+    Currently check if there is a 'stubs' directory component somewhere
+    in the path."""
+    # TODO more precise check
+    if path == '':
+        return False
+    else:
+        return os.path.basename(path) == 'stubs' or is_stub(
+            os.path.dirname(path))
 
 
 def log( message):
