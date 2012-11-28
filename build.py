@@ -3,28 +3,24 @@ in the correct order (based on file dependencies), and collect the results."""
 
 import os
 import os.path
+import sys
+from os.path import dirname, basename
 
 from mtypes import Typ
 from nodes import MypyFile, Node, Import, ImportFrom, ImportAll, MODULE_REF
 from nodes import SymbolTableNode
 from semanal import TypeInfoMap, SemanticAnal
-from os.path import dirname, basename
-from sys import platform
 from checker import TypeChecker
 from errors import Errors
 from parse import parse
-
-
-# TODO determine program path precisely
-program_path = '.'
 
 
 debug = False
 
 
 def \
-            build( program_text, program_file_name='main', use_test_builtins=False, alt_lib_path=None, do_type_check=False):
-    """Build a program represented as a string (programText).
+            build( program_text, program_file_name='main', use_test_builtins=False, alt_lib_path=None, do_type_check=False, mypy_base_dir=None):
+    """Build a program represented as a string (program_text).
 
     A single call to build performs semantic analysis and optionally
     type checking of the program *and* all imported modules,
@@ -38,26 +34,33 @@ def \
       4. node type map (map from parse tree node to its inferred type)
     
     Arguments:
-      programText: the contents of the main (program) source file
-      programFileName: the file name of the main source file, used for error
+      program_text: the contents of the main (program) source file
+      program_file_name: the file name of the main source file, used for error
         reporting (the default value is used by test cases only)
-      useTestBuiltins: if False, use normal builtins (default); if True, use
+      use_test_builtins: if False, use normal builtins (default); if True, use
         minimal stub builtins (this is for test cases only)
-      altLibDir: an additional directory for looking up library modules (takes
-        precedence over other directories)
-      doTypeCheck: if True, also perform type checking; otherwise, only perform
-        parsing and semantic analysis
+      alt_lib_dir: an additional directory for looking up library modules
+        (takes precedence over other directories)
+      do_type_check: if True, also perform type checking; otherwise, only
+        perform parsing and semantic analysis
+      mypy_base_dir: directory of mypy implementation (mypy.py); if omitted,
+        derived from sys.argv[0]
     
     Currently the final pass of the build (the compiler back end) is not
     implemented yet.
     """
+    if not mypy_base_dir:
+        # Determine location of the mypy installation.
+        mypy_base_dir = dirname(sys.argv[0])
+        if basename(mypy_base_dir) == '__mycache__':
+            mypy_base_dir = dirname(mypy_base_dir)
     # Determine the default module search path.
-    lib_path = default_lib_path()
+    lib_path = default_lib_path(mypy_base_dir)
     
     if use_test_builtins:
         # Use stub builtins (to speed up test cases and to make them easier to
         # debug).
-        lib_path.insert(0, path_relative_to_program_path('test/data/lib-stub'))
+        lib_path.insert(0, 'test/data/lib-stub')
     else:
         # Include directory of the program file in the module search path.
         lib_path.insert(0, fix_path(dirname(program_file_name)))
@@ -83,7 +86,7 @@ def \
     return manager.process(UnprocessedFile(info, program_text))
 
 
-def default_lib_path():
+def default_lib_path( mypy_base_dir):
     """Return default standard library search paths."""
     # IDEA: Make this more portable.
     path = []
@@ -94,10 +97,10 @@ def default_lib_path():
         path.append(path_env)
     
     # Add library stubs directory.
-    path.append(path_relative_to_program_path('stubs'))
+    path.append(os.path.join(mypy_base_dir, 'stubs'))
     
     # Add fallback path that can be used if we have a broken installation.
-    if platform != 'windows':
+    if sys.platform != 'win32':
         path.append('/usr/local/lib/mypy')
     
     return path
@@ -237,14 +240,6 @@ class BuildManager:
         """Is there a file in the file system corresponding to the
         given module?"""
         return find_module(id, self.lib_path) is not None
-
-
-def path_relative_to_program_path( dir):
-    """Convert a path to a path relative to ProgramPath of the current program,
-    independent of the working directory.
-    """
-    base_path = dirname(program_path)
-    return fix_path(os.path.normpath(os.path.join(base_path, dir)))
 
 
 def fix_path(p):

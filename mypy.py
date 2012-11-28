@@ -1,18 +1,20 @@
+#!/usr/bin/env python
 """Mypy type checker and Python translator
 
 Type check and program, translate it to Python and run it. Note that you must
-use a mypy translator that has already been translated to run this program.
+use a translated mypy translator to run this program.
 """
 
 import os
 import os.path
+import shutil
+import subprocess
 import sys
 import tempfile
-import shutil
 
 from build import build
-from pythongen import PythonGenerator
 from errors import CompileError
+from pythongen import PythonGenerator
 
 
 # Fallback options
@@ -23,10 +25,14 @@ interpreter = 'python'
 
 def main():
     path, args = process_options()
-    
-    mainfile = open(path)
-    text = mainfile.read()
-    mainfile.close()
+
+    try:
+        mainfile = open(path)
+        text = mainfile.read()
+        mainfile.close()
+    except IOError as ioerr:
+        fail("mypy: can't read file '{}': {}".format(path,
+                                                     ioerr.strerror))
     
     try:
         outputdir = os.path.join(os.path.dirname(path), '__mycache__')
@@ -59,22 +65,18 @@ def main():
                     outfile.close()
 
             # Run the translated program.
-
-            a = []
-            for arg in args[1:]:
-                # TODO escape arguments etc.
-                a.append('"{}"'.format(arg))
-
-            os.system('{} "{}/{}" {}'.format(interpreter, outputdir,
-                                             os.path.basename(path),
-                                             ' '.join(a)))
+            status = subprocess.call(
+                [interpreter,
+                 '{}/{}'.format(outputdir,os.path.basename(path))] +
+                args)
+            sys.exit(status)
         finally:
             if tempdir:
                 shutil.rmtree(outputdir)
     except CompileError as e:
         for m in e.messages:
             print(m)
-        sys.exit(2)
+        sys.exit(1)
 
 
 def process_options():
@@ -94,18 +96,23 @@ def process_options():
             interpreter = args[1]
             args = args[2:]
         else:
-            fail('Invalid option {}'.format(args[0]))
+            usage('Invalid option {}'.format(args[0]))
     
     if not args:
-        fail()
+        usage()
     
     return args[0], args[1:]    
 
 
-def fail( msg=None):
+def usage( msg=None):
     if msg:
         sys.stderr.write('%s\n' % msg)
     sys.stderr.write('Usage: mypy.py [--verbose] PROGRAM\n')
+    sys.exit(2)
+
+
+def fail( msg):
+    sys.stderr.write('%s\n' % msg)
     sys.exit(1)
 
 
