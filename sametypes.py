@@ -28,7 +28,7 @@ class SameTypeVisitor(TypeVisitor):
     def __init__(self, right):
         self.right = right
     
-    # visitX(left) means: is left (which is an instance of X) the same type as
+    # visit_x(left) means: is left (which is an instance of X) the same type as
     # right?
     
     def visit_unbound_type(self, left):

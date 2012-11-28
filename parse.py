@@ -147,9 +147,9 @@ class Parser:
         name, components = self.parse_qualified_name()
         import_tok = self.expect('import')
         name_toks = []
-        node = None
         lparen = none
         rparen = none
+        node = None
         if self.current_str() == '*':
             name_toks.append(([self.skip()], none))
             node = ImportAll(name)
@@ -314,7 +314,6 @@ class Parser:
              dict_var_arg, max_pos, typ,
              is_error, toks) = self.parse_function_header(ret_type)
             
-            body = None
             if is_in_interface and isinstance(self.current(), Break):
                 body = Block([])
                 br = self.expect_break()
@@ -431,7 +430,6 @@ class Parser:
                     arg_type = self.parse_type().typ
                 arg_types.append(arg_type)
                 
-                name = None
                 if self.current_str() == '*' and self.peek().string == ',':
                     self.expect('*')
                     max_pos = len(args)
@@ -1314,20 +1312,20 @@ class Parser:
         kw_args = []
         dict_var_arg = None
         while self.current_str() != ')' and not self.eol():
-            if isinstance(self.current(), Name) and self.peek().string == '=':
-                c = None
+            if (isinstance(self.current(), Name) and self.peek().string == '='
+                    and not dict_var_arg):
                 kw_args, assigns, c = self.parse_keyword_args()
                 commas.extend(c)
-                break
+                continue
             if (self.current_str() == '*' and not is_var_arg
-                    and dict_var_arg is None):
+                    and dict_var_arg is None and not kw_args):
                 is_var_arg = True
                 at = self.expect('*')
                 args.append(self.parse_expression(precedence[',']))
             elif self.current_str() == '**' and dict_var_arg is None:
                 self.expect('**')
                 dict_var_arg = self.parse_expression(precedence[','])
-            else:
+            elif not is_var_arg and not dict_var_arg:
                 args.append(self.parse_expression(precedence[',']))
             if self.current_str() != ',':
                 break
@@ -1335,11 +1333,10 @@ class Parser:
         return args, is_var_arg, dict_var_arg, commas, at, kw_args, assigns
     
     def parse_keyword_args(self):
-        
         res = []
         assigns = []
         commas = []
-        while self.current_str() != ')':
+        while self.current_str() != ')' and self.current_str() != '**':
             name = self.parse_name_expr()
             assigns.append(self.expect('='))
             value = self.parse_expression(precedence[','])
@@ -1413,7 +1410,6 @@ class Parser:
     def parse_unary_expr(self):
         op_tok = self.skip()
         op = op_tok.string
-        prec = None
         if op == '-' or op == '+':
             prec = precedence['-u']
         else:

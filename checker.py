@@ -335,17 +335,10 @@ class TypeChecker(NodeVisitor):
     def visit_type_def(self, defn):
         """Type check a type definition (class or interface)."""
         typ = self.lookup(defn.name, GDEF).node
-        # TODO
-        #addMembersToSymbolTable(type as TypeInfo)
-        
         self.errors.set_type(defn.name, defn.is_interface)
-        
         self.check_unique_interface_implementations(typ)
-        
         self.check_interface_errors(typ)
-        
         self.accept(defn.defs)
-        
         self.errors.set_type(None, False)
     
     def check_unique_interface_implementations(self, typ):
@@ -578,8 +571,8 @@ class TypeChecker(NodeVisitor):
     def check_indexed_assignment(self, lvalue, rvalue, context):
         """Type check indexed assignment base[index] = rvalue.
 
-        The lvalueTypes argument is the tuple (base type, index), the
-        rvaluaType is the type of the rvalue.
+        The lvalue argument is the tuple (base type, index) and rvalue is the
+        assigned expression.
         """
         method_type = self.expr_checker.analyse_external_member_access(
             '__setitem__', lvalue[0], context)
@@ -851,7 +844,7 @@ class TypeChecker(NodeVisitor):
     
     def named_type(self, name):
         """Return an instance type with type given by the name and no
-        type arguments. For example, namedType('builtins.object')
+        type arguments. For example, named_type('builtins.object')
         produces the object type.
         """
         # Assume that the name refers to a type.
@@ -1000,9 +993,9 @@ def map_type_from_supertype( typ, sub_info, super_info):
     # context.
     inst_type = map_instance_to_supertype(inst_type, super_info)
     # Finally expand the type variables in type with those in the previously
-    # constructed type. Note that both type and instType may have type
+    # constructed type. Note that both type and inst_type may have type
     # variables, but in type they are interpreterd in supertype context while
-    # in instType they are interpreted in subtype context. This works even if
+    # in inst_type they are interpreted in subtype context. This works even if
     # the names of type variables in supertype and subtype overlap.
     return expand_type_by_instance(typ, inst_type)
 

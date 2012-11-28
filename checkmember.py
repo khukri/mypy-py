@@ -11,8 +11,8 @@ def analyse_member_access( name, typ, node, is_lvalue, is_super, tuple_type, msg
     different variations:
     
       1. lvalue or non-lvalue access (i.e. setter or getter access)
-      2. supertype access (when using the super keyword; isSuper == True and
-         overrideInfo should refer to the supertype)
+      2. supertype access (when using the super keyword; is_super == True and
+         override_info should refer to the supertype)
     
     Note that this function may return a RangeCallable type.
     """

@@ -58,7 +58,7 @@ class SemanticAnal(NodeVisitor):
     errors = None       # Keep track of generated errors
     
     def __init__(self, lib_path, errors):
-        """Create semantic analyzer. Use libPath to search for
+        """Create semantic analyzer. Use lib_path to search for
         modules, and report compile errors using the Errors instance.
         """
         self.stack = [None]

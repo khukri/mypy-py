@@ -71,12 +71,12 @@ class MessageBuilder:
     
     def format(self, typ):
         """Convert a type to a relatively short string that is
-        suitable for error messages. Mostly behave like formatSimple
+        suitable for error messages. Mostly behave like format_simple
         below, but never return an empty string.
         """
         s = self.format_simple(typ)
         if s != '':
-            # If formatSimple returns a non-trivial result, use that.
+            # If format_simple returns a non-trivial result, use that.
             return s
         elif isinstance(typ, Callable):
             # Use a simple representation for function types; proper function
@@ -110,7 +110,7 @@ class MessageBuilder:
                 return '{}[]'.format(strip_quotes(self.format(itype.args[0])))
             else:
                 # There are type arguments. Convert the arguments to strings
-                # (using format() instead of formatSimple() to avoid empty
+                # (using format() instead of format_simple() to avoid empty
                 # strings). If the result is too long, replace arguments
                 # with <...>.
                 a = []
@@ -233,7 +233,7 @@ class MessageBuilder:
         return Any()
     
     def incompatible_argument(self, n, callee, arg_type, context):
-        """Report an error about an incompatible type argType for
+        """Report an error about an incompatible type arg_type for
         argument n when calling a value with type callee. If the
         callee represents a method that corresponds to an operator,
         use the corresponding operator name in the messages.

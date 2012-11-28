@@ -258,13 +258,13 @@ class Lexer:
         else:
             self.lex_misc()
     
-    number_exp = re.compile('[0-9]|\\.[0-9]')  # Used by isAtNumber
+    number_exp = re.compile('[0-9]|\\.[0-9]')
     
     def is_at_number(self):
         """Is the current location at a numeric literal?"""
         return self.match(self.number_exp) != ''
     
-    # Regexps used by lexNumber
+    # Regexps used by lex_number
     number_exp1 = re.compile('0[xXoO][0-9a-fA-F]+|[0-9]+')
     number_exp2 = re.compile(
         '[0-9]*\\.[0-9]*([eE][-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+')
@@ -290,7 +290,7 @@ class Lexer:
             # Float literal.
             self.add_token(FloatLit(s2))
     
-    name_exp = re.compile('[a-zA-Z_][a-zA-Z0-9_]*') # Used by lexName
+    name_exp = re.compile('[a-zA-Z_][a-zA-Z0-9_]*')
     
     def lex_name(self):
         """Analyse a name (an identifier, a keyword or an alphabetical
