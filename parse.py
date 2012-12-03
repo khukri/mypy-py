@@ -1325,11 +1325,12 @@ class Parser:
     
     def parse_call_expr(self, callee):
         lparen = self.expect('(')
-        (args, kinds, names, commas, at, assigns) = self.parse_arg_expr()
+        (args, kinds, names,
+         commas, star, star2, assigns) = self.parse_arg_expr()
         rparen = self.expect(')')
         node = CallExpr(callee, args, kinds, names)
-        self.set_repr(node, noderepr.CallExprRepr(lparen, commas, at, assigns,
-                                                  rparen))
+        self.set_repr(node, noderepr.CallExprRepr(lparen, commas, star, star2,
+                                                  assigns, rparen))
         return node
     
     def \
@@ -1341,13 +1342,15 @@ class Parser:
           argument kinds
           argument names (for named arguments; None for ordinary args)
           comma tokens
-          asterisk token
+          * token (if any)
+          ** token (if any)
           (assignment, name) tokens
         """        
         args = []
         kinds = []
         names = []
-        at = none
+        star = none
+        star2 = none
         commas = []
         keywords = []
         var_arg = False
@@ -1366,12 +1369,12 @@ class Parser:
                     and not named_args):
                 # *args
                 var_arg = True
-                at = self.expect('*')
+                star = self.expect('*')
                 kinds.append(nodes.ARG_STAR)
                 names.append(None)
             elif self.current_str() == '**':
                 # **kwargs
-                self.expect('**')
+                star2 = self.expect('**')
                 dict_arg = True
                 kinds.append(nodes.ARG_STAR2)
                 names.append(None)
@@ -1385,7 +1388,7 @@ class Parser:
             if self.current_str() != ',':
                 break
             commas.append(self.expect(','))
-        return args, kinds, names, commas, at, keywords
+        return args, kinds, names, commas, star, star2, keywords
     
     def parse_member_expr(self, expr):
         dot = self.expect('.')

@@ -217,11 +217,12 @@ class MemberExprRepr:
 
 
 class CallExprRepr:
-    def __init__(self, lparen, commas, asterisk, keywords, rparen):
+    def __init__(self, lparen, commas, star, star2, keywords, rparen):
         # Asterisk may be empty.
         self.lparen = lparen
         self.commas = commas
-        self.asterisk = asterisk
+        self.star = star
+        self.star2 = star2
         self.keywords = keywords
         self.rparen = rparen
 
