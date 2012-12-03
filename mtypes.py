@@ -148,7 +148,9 @@ class FunctionLike(Typ):
 class Callable(FunctionLike):
     """Type of a non-overloaded callable object (function)."""
     arg_types = None # Types of function arguments
-    min_args = None        # Minimum number of arguments
+    arg_kinds = None # nodes.ARG_ constants
+    arg_names = None # None if not a keyword argument
+    minargs = None         # Minimum number of arguments
     is_var_arg = None     # Is it a varargs function?
     ret_type = None        # Return value type
     name = None            # Name (may be None; for error messages)
@@ -170,14 +172,16 @@ class Callable(FunctionLike):
     
     _is_type_obj = None # Does this represent a type object?
     
-    def __init__(self, arg_types, min_args, is_var_arg, ret_type, is_type_obj, name=None, variables=None, bound_vars=None, line=-1, repr=None):
+    def __init__(self, arg_types, arg_kinds, arg_names, ret_type, is_type_obj, name=None, variables=None, bound_vars=None, line=-1, repr=None):
         if not variables:
             variables = TypeVars([])
         if not bound_vars:
             bound_vars = []
         self.arg_types = arg_types
-        self.min_args = min_args
-        self.is_var_arg = is_var_arg
+        self.arg_kinds = arg_kinds
+        self.arg_names = arg_names
+        self.min_args = arg_kinds.count(nodes.ARG_POS)
+        self.is_var_arg = nodes.ARG_STAR in arg_kinds
         self.ret_type = ret_type
         self._is_type_obj = is_type_obj
         assert not name or '<bound method' not in name
@@ -198,8 +202,8 @@ class Callable(FunctionLike):
         if isinstance(ret, Void):
             ret = (ret).with_source(name)
         return Callable(self.arg_types,
-                        self.min_args,
-                        self.is_var_arg,
+                        self.arg_kinds,
+                        self.arg_names,
                         ret,
                         self.is_type_obj(),
                         name,
@@ -409,8 +413,8 @@ class TypeTranslator(TypeVisitor):
     
     def visit_callable(self, t):
         return Callable(self.translate_types(t.arg_types),
-                        t.min_args,
-                        t.is_var_arg,
+                        t.arg_kinds,
+                        t.arg_names,
                         t.ret_type.accept(self),
                         t.is_type_obj(),
                         t.name,
@@ -488,21 +492,21 @@ class TypeStrVisitor(TypeVisitor):
             return s
     
     def visit_callable(self, t):
-        s = self.list_str(t.arg_types[:t.min_args])
-        
-        opt = t.arg_types[t.min_args:]
-        if t.is_var_arg:
-            opt = opt[:-1]
-        
-        for o in opt:
+        s = ''
+        bare_asterisk = False
+        for i in range(len(t.arg_types)):
             if s != '':
                 s += ', '
-            s += str(o) + '='
-        
-        if t.is_var_arg:
-            if s != '':
-                s += ', '
-            s += '*' + str(t.arg_types[-1])
+            if t.arg_kinds[i] == nodes.ARG_NAMED and not bare_asterisk:
+                s += '*, '
+                bare_asterisk = True
+            if t.arg_kinds[i] == nodes.ARG_STAR:
+                s += '*'
+            s += str(t.arg_types[i])
+            if t.arg_names[i]:
+                s += ' {}'.format(t.arg_names[i])
+            if t.arg_kinds[i] == nodes.ARG_OPT:
+                s += '='
         
         s = '({})'.format(s)
         

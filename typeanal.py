@@ -4,6 +4,7 @@ from mtypes import (
 )
 from typerepr import TypeVarRepr
 from nodes import GDEF, TypeInfo, Context, SymbolTableNode, TVAR
+import nodes
 
 
 class TypeAnalyser(TypeVisitor):
@@ -67,7 +68,10 @@ class TypeAnalyser(TypeVisitor):
         a = []
         for at in t.args[:-1]:
             a.append(at.accept(self))
-        return Callable(a, len(a), False, t.args[-1].accept(self), False, None,
+        return Callable(a, [nodes.ARG_POS] * len(a), [None] * len(a),
+                        t.args[-1].accept(self),
+                        False,
+                        None,
                         TypeVars([]), [], t.line, t.repr)
     
     def visit_any(self, t):
@@ -87,8 +91,8 @@ class TypeAnalyser(TypeVisitor):
     
     def visit_callable(self, t):
         res = Callable(self.anal_array(t.arg_types),
-                       t.min_args,
-                       t.is_var_arg,
+                       t.arg_kinds,
+                       t.arg_names,
                        t.ret_type.accept(self),
                        t.is_type_obj(),
                        t.name,

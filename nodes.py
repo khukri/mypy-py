@@ -167,25 +167,23 @@ class OverloadedFuncDef(FuncBase, SymNode):
 
 
 class FuncItem(FuncBase):
-    # Fixed argument names
-    args = None
+    args = None      # Argument names
+    arg_kinds = None # Kinds of arguments (ARG_*)
+    
     # Initialization expessions for fixed args; None if no initialiser
     init = None
     min_args = None           # Minimum number of arguments
     max_pos = None            # Maximum number of positional arguments, -1 if
-                           # no explicit limit
-    var_arg = None            # If not None, *x arg
-    dict_var_arg = None       # If not None, **x arg
+                           # no explicit limit (*args not included)
     body = None
     is_implicit = None    # Implicit dynamic types?
     is_overload = None    # Is this an overload variant of function with
                         # more than one overload variant?
     
-    def __init__(self, args, init, var_arg, dict_var_arg, max_pos, body, typ=None):
+    def __init__(self, args, arg_kinds, init, body, typ=None):
         self.args = args
-        self.var_arg = var_arg
-        self.dict_var_arg = dict_var_arg
-        self.max_pos = max_pos
+        self.arg_kinds = arg_kinds
+        self.max_pos = arg_kinds.count(ARG_POS) + arg_kinds.count(ARG_OPT)
         self.body = body
         self.typ = typ
         self.is_implicit = typ is None
@@ -207,7 +205,7 @@ class FuncItem(FuncBase):
         self.init = i2
     
     def max_fixed_argc(self):
-        return len(self.args)
+        return self.max_pos
     
     def set_line(self, tok):
             
@@ -243,8 +241,8 @@ class FuncItem(FuncBase):
 class FuncDef(FuncItem, SymNode):
     _full_name = None      # Name with module prefix
     
-    def __init__(self, name, args, init, var_arg, dict_var_arg, max_pos, body, typ=None):
-        super().__init__(args, init, var_arg, dict_var_arg, max_pos, body, typ)
+    def __init__(self, name, args, arg_kinds, init, body, typ=None):
+        super().__init__(args, arg_kinds, init, body, typ)
         self._name = name
 
     def name(self):
@@ -687,22 +685,26 @@ class MemberExpr(RefExpr):
         return visitor.visit_member_expr(self)
 
 
+# Kinds of arguments
+ARG_POS = 0   # Positional argument
+ARG_OPT = 1   # Positional, optional argument (functions only, not calls)
+ARG_STAR = 2  # *arg argument
+ARG_NAMED = 3 # Keyword argument x=y in call, or keyword-only function arg
+ARG_STAR2 = 4 # **arg argument
+
+
 class CallExpr(Node):
     """Call expression"""
     callee = None
     args = None
-    is_var_arg = None
-    keyword_args = None
-    dict_var_arg = None
+    arg_kinds = None # ARG_ constants
+    arg_names = None # None if not a keyword argument
     
-    def __init__(self, callee, args, is_var_arg=False, keyword_args=None, dict_var_arg=None):
-        if not keyword_args:
-            keyword_args = []
+    def __init__(self, callee, args, arg_kinds, arg_names):
         self.callee = callee
         self.args = args
-        self.is_var_arg = is_var_arg
-        self.keyword_args = keyword_args
-        self.dict_var_arg = dict_var_arg
+        self.arg_kinds = arg_kinds
+        self.arg_names = arg_names
     
     def accept(self, visitor):
         return visitor.visit_call_expr(self)
@@ -1247,9 +1249,12 @@ def function_type( func):
         name = func.name()
         if name:
             name = '"{}"'.format(name)
+        names = []
+        for arg in fdef.args:
+            names.append(arg.name())
         return mtypes.Callable( [mtypes.Any()] * len(fdef.args),
-                               fdef.min_args,
-                               fdef.var_arg is not None,
+                               fdef.arg_kinds,
+                               names,
                                mtypes.Any(),
                                False,
                                name)
@@ -1270,8 +1275,8 @@ def method_type( func):
 
 def method_callable(c):
     return mtypes.Callable(c.arg_types[1:],
-                           c.min_args - 1,
-                           c.is_var_arg,
+                           c.arg_kinds[1:],
+                           c.arg_names[1:],
                            c.ret_type,
                            c.is_type_obj(),
                            c.name,

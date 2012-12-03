@@ -14,6 +14,7 @@ from nodes import (
     Decorator, SetExpr
 )
 from nodes import function_type, method_type
+import nodes
 from mtypes import (
     Typ, Any, Callable, Void, FunctionLike, Overloaded, TupleType, Instance,
     NoneTyp, UnboundType, TypeTranslator
@@ -177,7 +178,7 @@ class TypeChecker(NodeVisitor):
             self.check_method_override(defn)
     
     def check_func_item(self, defn):
-        if defn.dict_var_arg:
+        if nodes.ARG_STAR2 in defn.arg_kinds:
             return self.msg.not_implemented('keyword arguments', defn)
         
         # We may be checking a function definition or an anonymous function. In
@@ -229,11 +230,9 @@ class TypeChecker(NodeVisitor):
         nargs = len(defn.args)
         for i in range(len(ctype.arg_types)):
             arg_type = ctype.arg_types[i]
-            if defn.var_arg and i == nargs:
+            if ctype.arg_kinds[i] == nodes.ARG_STAR:
                 arg_type = self.named_generic_type('builtins.list', [arg_type])
-                defn.var_arg.typ = Annotation(arg_type)
-            else:
-                defn.args[i].typ = Annotation(arg_type)
+            defn.args[i].typ = Annotation(arg_type)
         
         # Type check initialization expressions.
         for j in range(len(defn.init)):
@@ -512,8 +511,8 @@ class TypeChecker(NodeVisitor):
         if isinstance(typ, Callable):
             ctyp = typ
             return Callable(ctyp.arg_types,
-                            ctyp.min_args,
-                            ctyp.is_var_arg,
+                            ctyp.arg_kinds,
+                            ctyp.arg_names,
                             ctyp.ret_type,
                             ctyp.is_type_obj(),
                             None,
@@ -577,6 +576,7 @@ class TypeChecker(NodeVisitor):
         method_type = self.expr_checker.analyse_external_member_access(
             '__setitem__', lvalue[0], context)
         return self.expr_checker.check_call(method_type, [lvalue[1], rvalue],
+                                            [nodes.ARG_POS, nodes.ARG_POS],
                                             context)
     
     def visit_expression_stmt(self, s):
@@ -696,10 +696,10 @@ class TypeChecker(NodeVisitor):
         echk = self.expr_checker
         method = echk.analyse_external_member_access('__iter__', iterable,
                                                      s.expr)
-        iterator = echk.check_call(method, [], s.expr)
+        iterator = echk.check_call(method, [], [], s.expr)
         method = echk.analyse_external_member_access('__next__', iterator,
                                                      s.expr)
-        item = echk.check_call(method, [], s.expr)
+        item = echk.check_call(method, [], [], s.expr)
         
         if not s.is_annotated():
             # Create a temporary copy of variables with Node item type.
@@ -734,7 +734,7 @@ class TypeChecker(NodeVisitor):
             e = s.expr  # Cast
             m = MemberExpr(e.base, '__delitem__')
             m.line = s.line
-            c = CallExpr(m, [e.index])
+            c = CallExpr(m, [e.index], [nodes.ARG_POS], [None])
             c.line = s.line
             return c.accept(self)
         else:

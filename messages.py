@@ -300,6 +300,25 @@ class MessageBuilder:
             msg += ' for {}'.format(callee.name)
         self.fail(msg, context)
     
+    def too_many_positional_arguments(self, callee, context):
+        msg = 'Too many positional arguments'
+        if callee.name:
+            msg += ' for {}'.format(callee.name)
+        self.fail(msg, context)
+
+    def unexpected_keyword_argument(self, callee, name, context):
+        msg = 'Unexpected keyword argument "{}"'.format(name)
+        if callee.name:
+            msg += ' for {}'.format(callee.name)
+        self.fail(msg, context)            
+
+    def duplicate_argument_value(self, callee, index, context):
+        f = 'Function'
+        if callee.name:
+            f = '{}'.format(callee.name)
+        self.fail('{} gets multiple values for keyword argument "{}"'.
+                  format(f, callee.arg_names[index]), context)
+    
     def does_not_return_value(self, void_type, context):
         """Report an error about a void type in a non-void
         context. The first argument must be a void type. If the void
