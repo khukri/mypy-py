@@ -43,6 +43,13 @@ def get_actual_type( arg_type, kind, tuple_counter):
             return tuplet.items[tuple_counter[0] - 1]
         else:
             return Any()
+    elif kind == nodes.ARG_STAR2:
+        if isinstance(arg_type, Instance) and (
+                (arg_type).typ.full_name() == 'builtins.dict'):
+            # Dict **arg. TODO more general (Mapping)
+            return (arg_type).args[1]
+        else:
+            return Any()
     else:
         # No translation for other kinds.
         return arg_type

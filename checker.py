@@ -178,9 +178,6 @@ class TypeChecker(NodeVisitor):
             self.check_method_override(defn)
     
     def check_func_item(self, defn):
-        if nodes.ARG_STAR2 in defn.arg_kinds:
-            return self.msg.not_implemented('keyword arguments', defn)
-        
         # We may be checking a function definition or an anonymous function. In
         # the first case, set up another reference with the precise type.
         fdef = None
@@ -232,6 +229,9 @@ class TypeChecker(NodeVisitor):
             arg_type = ctype.arg_types[i]
             if ctype.arg_kinds[i] == nodes.ARG_STAR:
                 arg_type = self.named_generic_type('builtins.list', [arg_type])
+            elif ctype.arg_kinds[i] == nodes.ARG_STAR2:
+                arg_type = self.named_generic_type('builtins.dict',
+                                                   [self.str_type(), arg_type])
             defn.args[i].typ = Annotation(arg_type)
         
         # Type check initialization expressions.
@@ -885,6 +885,10 @@ class TypeChecker(NodeVisitor):
     def bool_type(self):
         """Return instance type 'bool'."""
         return self.named_type('builtins.bool')
+    
+    def str_type(self):
+        """Return instance type 'str'."""
+        return self.named_type('builtins.str')
     
     def tuple_type(self):
         """Return instance type 'tuple'."""
