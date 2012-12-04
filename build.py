@@ -196,16 +196,20 @@ class BuildManager:
         return name in self.module_files
     
     def file_state(self, path):
-        """Return the state of a file. This does not consider any
-        dependencies."""
+        """Return the state of a file.
+
+        This does not consider any dependencies.
+        """
         for s in self.states:
             if s.path == path:
                 return s.state()
         return UNSEEN_STATE
     
     def module_state(self, name):
-        """Return the state of a module. This considers also module
-        dependencies."""
+        """Return the state of a module.
+
+        This considers also module dependencies.
+        """
         if not self.has_module(name):
             return UNSEEN_STATE
         state = final_state
