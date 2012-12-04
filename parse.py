@@ -368,10 +368,11 @@ class Parser:
         return (name, args, init, kinds, typ, False, (name_tok, arg_repr))
     
     def parse_args(self, ret_type):
-        """Parse a function type signature, potentially prefixed with
-        type variable specification within <...>.
-        """
-        
+        """Parse a function type signature.
+
+        It is potentially prefixed with type variable specification within
+        <...>.
+        """        
         type_vars = self.parse_type_vars()
         
         lparen = self.expect('(')
@@ -413,15 +414,14 @@ class Parser:
         else:
             return None
     
-    def\
-                     parse_arg_list(self):
+    def parse_arg_list(self):
         """Parse function definition argument list.
 
         This includes everything between '(' and ')').
 
         Return a 9-tuple with these items:
           arguments, initializers, kinds, has inits, arg name tokens,
-          comma tokens, asterisk token, assignment tokens, argument types
+          comma tokens, asterisk tokens, assignment tokens, argument types
         """
         args = []
         kinds = []
@@ -432,7 +432,7 @@ class Parser:
         
         arg_names = []
         commas = []
-        asterisk = none
+        asterisk = []
         assigns = []
         
         require_named = False
@@ -449,8 +449,8 @@ class Parser:
                     require_named = True
                     arg_types.pop()
                 elif self.current_str() in ['*', '**']:
-                    asterisk = self.skip()
-                    isdict = asterisk.string == '**'
+                    asterisk.append(self.skip())
+                    isdict = asterisk[-1].string == '**'
                     name = self.expect_type(Name)
                     arg_names.append(name)
                     names.append(name.string)
