@@ -41,6 +41,7 @@ precedence = {
     'and': 4,
     'or': 3,
     '<if>': 2, # conditional expression
+    '<for>': 2, # list comprehension
     ',': 1}
 
 
@@ -864,35 +865,6 @@ class Parser:
         
         return index, types, commas
     
-    def parse_index_variables(self):
-        # Parse index variables.
-        # TODO Do we need this and the above?
-        index = []
-        types = []
-        
-        is_paren = self.current_str() == '('
-        if is_paren:
-            self.skip()
-        
-        while True:
-            ann = None
-            if self.is_at_type():
-                ann = self.parse_type()
-            tok = self.expect_type(Name)
-            v = Var(tok.string).set_line(tok)
-            index.append(v)
-            types.append(ann)
-            if self.current_str() != ',':
-                self.set_repr(v, noderepr.VarRepr(tok, none))
-                break
-            comma = self.skip()
-            self.set_repr(v, noderepr.VarRepr(tok, comma))
-        
-        if is_paren:
-            self.expect(')')
-        
-        return index, types
-    
     def parse_if_stmt(self):
         is_error = False
         
@@ -1078,10 +1050,13 @@ class Parser:
                 else:
                     break
             elif _x == 'for':
-                # List comprehension or generator expression. Parse as
-                # generator expression; it will be converted to list
-                # comprehension if needed elsewhere.
-                expr = self.parse_generator_expr(expr)
+                if precedence['<for>'] > prec:
+                    # List comprehension or generator expression. Parse as
+                    # generator expression; it will be converted to list
+                    # comprehension if needed elsewhere.
+                    expr = self.parse_generator_expr(expr)
+                else:
+                    break                              
             elif _x == 'if':
                 # Conditional expression.
                 if precedence['<if>'] > prec:
@@ -1148,14 +1123,17 @@ class Parser:
         return node
     
     def parse_list_expr(self):
+        """Parse list literal or list comprehension."""
         items = []
         lbracket = self.expect('[')
         commas = []
         while self.current_str() != ']' and not self.eol():
-            items.append(self.parse_expression(precedence[',']))
+            items.append(self.parse_expression(precedence['<for>']))
             if self.current_str() != ',':
                 break
             commas.append(self.expect(','))
+        if self.current_str() == 'for' and len(items) == 1:
+            items[0] = self.parse_generator_expr(items[0])            
         rbracket = self.expect(']')
         if len(items) == 1 and isinstance(items[0], GeneratorExpr):
             return ListComprehension(items[0])
@@ -1166,15 +1144,17 @@ class Parser:
             return node
     
     def parse_generator_expr(self, left_expr):
-        self.expect('for')
-        index, types = self.parse_index_variables()
+        for_tok = self.expect('for')
+        index, types, commas = self.parse_for_index_variables()
         self.expect('in')
         right_expr = self.parse_expression_list()
         cond = None
         if self.current_str() == 'if':
             self.skip()
             cond = self.parse_expression()
-        return GeneratorExpr(left_expr, index, types, right_expr, cond)
+        gen = GeneratorExpr(left_expr, index, types, right_expr, cond)
+        gen.set_line(for_tok)
+        return gen
     
     def parse_expression_list(self):
         prec = precedence['<if>']

@@ -505,7 +505,7 @@ class TypeChecker(NodeVisitor):
         return True
     
     def strip_type(self, typ):
-        """Remove a copy of type with all 'debugging information' (e.g. name of
+        """Return a copy of type with all 'debugging information' (e.g. name of
         function) removed.
         """
         if isinstance(typ, Callable):
@@ -683,51 +683,56 @@ class TypeChecker(NodeVisitor):
 
     def visit_for_stmt(self, s):
         """Type check a for statement."""
-        iterable = self.accept(s.expr)
+        item_type = self.analyse_iterable_item_type(s.expr)
+        self.analyse_index_variables(s.index, s.is_annotated(), item_type, s)
+        self.accept(s.body)
+
+    def analyse_iterable_item_type(self, expr):
+        """Analyse iterable expression and return iterator item type."""
+        iterable = self.accept(expr)
         
-        self.check_not_void(iterable, s.expr)
+        self.check_not_void(iterable, expr)
         self.check_subtype(iterable,
                            self.named_generic_type('builtins.Iterable',
                                                    [Any()]),
-                           s.expr, messages.ITERABLE_EXPECTED)
-        
-        method = None
+                           expr, messages.ITERABLE_EXPECTED)
         
         echk = self.expr_checker
         method = echk.analyse_external_member_access('__iter__', iterable,
-                                                     s.expr)
-        iterator = echk.check_call(method, [], [], s.expr)
+                                                     expr)
+        iterator = echk.check_call(method, [], [], expr)
         method = echk.analyse_external_member_access('__next__', iterator,
-                                                     s.expr)
-        item = echk.check_call(method, [], [], s.expr)
-        
-        if not s.is_annotated():
+                                                     expr)
+        return echk.check_call(method, [], [], expr)
+
+    def analyse_index_variables(self, index, is_annotated, item_type, context):
+        """Type check or infer for loop or list comprehension index vars."""
+        if not is_annotated:
             # Create a temporary copy of variables with Node item type.
             # TODO this is ugly
-            index = []
-            for i in s.index:
-                index.append(i)
-            self.check_assignments(index, self.temp_node(item, s.expr))
-        elif len(s.index) == 1:
-            v = s.index[0].node
+            node_index = []
+            for i in index:
+                node_index.append(i)
+            self.check_assignments(node_index,
+                                   self.temp_node(item_type, context))
+        elif len(index) == 1:
+            v = index[0].node
             if v.typ:
                 self.check_single_assignment(v.typ.typ, None,
-                                           self.temp_node(item), s,
+                                           self.temp_node(item_type), context,
                                            messages.INCOMPATIBLE_TYPES_IN_FOR)
         else:
             t = []
-            for ii in s.index:
+            for ii in index:
                 v = ii.node
                 if v.typ:
                     t.append(v.typ.typ)
                 else:
                     t.append(Any())
             self.check_multi_assignment(
-                t, [None] * len(s.types),
-                self.temp_node(item), s.expr,
+                t, [None] * len(index),
+                self.temp_node(item_type), context,
                 messages.INCOMPATIBLE_TYPES_IN_FOR)
-        
-        self.accept(s.body)
     
     def visit_del_stmt(self, s):
         if isinstance(s.expr, IndexExpr):
@@ -801,15 +806,15 @@ class TypeChecker(NodeVisitor):
     def visit_func_expr(self, e):
         return self.expr_checker.visit_func_expr(e)
     
+    def visit_list_comprehension(self, e):
+        return self.expr_checker.visit_list_comprehension(e)
+
     def visit_temp_node(self, e):
         return e.typ
 
     #
     # Currently unsupported features
     #
-
-    def visit_list_comprehension(self, e):
-        return self.msg.not_implemented('list comprehension', e)
 
     def visit_set_expr(self, e):
         return self.msg.not_implemented('set literal', e)

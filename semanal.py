@@ -11,7 +11,7 @@ from nodes import (
     ForStmt, BreakStmt, ContinueStmt, IfStmt, TryStmt, WithStmt, DelStmt,
     GlobalDecl, SuperExpr, DictExpr, CallExpr, RefExpr, OpExpr, UnaryExpr,
     SliceExpr, CastExpr, TypeApplication, Context, SymbolTable,
-    SymbolTableNode, TVAR
+    SymbolTableNode, TVAR, ListComprehension, GeneratorExpr
 )
 from visitor import NodeVisitor
 from errors import Errors
@@ -47,7 +47,7 @@ class SemanticAnal(NodeVisitor):
     # All classes, from name to info (TODO needed?)
     types = None
     
-    stack = None         # Function local/type variable stack
+    stack = None         # Function local/type variable stack TODO remove
     typ = None        # TypeInfo of enclosing class (or None)
     is_init_method = None # Are we now analysing __init__?
     is_function = None    # Are we now analysing a function/method?
@@ -62,6 +62,7 @@ class SemanticAnal(NodeVisitor):
         modules, and report compile errors using the Errors instance.
         """
         self.stack = [None]
+        self.locals = []
         self.imports = set()
         self.typ = None
         self.block_depth = 0
@@ -169,7 +170,7 @@ class SemanticAnal(NodeVisitor):
             d.accept(self)
     
     def visit_func_def(self, defn):
-        if self.locals is not None:
+        if self.locals:
             self.fail('Nested functions not supported yet', defn)
             return
         if self.typ:
@@ -242,7 +243,7 @@ class SemanticAnal(NodeVisitor):
                 name = items[i].name
                 if name in names:
                     self.name_already_defined(name, defn)
-                self.add_type_var(self.locals, name, -i - 1)
+                self.add_type_var(self.locals[-1], name, -i - 1)
                 names.add(name)
     
     def type_var_names(self):
@@ -255,7 +256,7 @@ class SemanticAnal(NodeVisitor):
         scope[name] = SymbolTableNode(TVAR, None, None, None, id)
     
     def visit_type_def(self, defn):
-        if self.locals is not None or self.typ:
+        if self.locals or self.typ:
             self.fail('Nested classes not supported yet', defn)
             return
         self.typ = defn.info
@@ -362,7 +363,7 @@ class SemanticAnal(NodeVisitor):
                 defn.items[i][0].typ = Annotation(defn.items[i][1])
         
         for v, t in defn.items:
-            if self.locals is not None:
+            if self.locals:
                 defn.kind = LDEF
                 self.add_local(v, defn)
             elif self.typ:
@@ -390,7 +391,7 @@ class SemanticAnal(NodeVisitor):
     def analyse_lvalue(self, lval, nested=False, add_defs=False):
         if isinstance(lval, NameExpr):
             n = lval
-            nested_global = (self.locals is None and self.block_depth > 0 and
+            nested_global = (not self.locals and self.block_depth > 0 and
                              not self.typ)
             if (add_defs or nested_global) and n.name not in self.globals:
                 # Define new global name.
@@ -404,7 +405,7 @@ class SemanticAnal(NodeVisitor):
                 v = n.node
                 self.module_names[v.name()] = SymbolTableNode(GDEF, v,
                                                               self.cur_mod_id)
-            elif (self.locals is not None and n.name not in self.locals and
+            elif (self.locals and n.name not in self.locals[-1] and
                   n.name not in self.global_decls[-1]):
                 # Define new local name.
                 v = Var(n.name)
@@ -412,8 +413,8 @@ class SemanticAnal(NodeVisitor):
                 n.is_def = True
                 n.kind = LDEF
                 self.add_local(v, n)
-            elif self.locals is None and (self.typ and
-                                          n.name not in self.typ.vars):
+            elif not self.locals and (self.typ and
+                                      n.name not in self.typ.vars):
                 # Define a new attribute.
                 v = Var(n.name)
                 v.info = self.typ
@@ -455,7 +456,7 @@ class SemanticAnal(NodeVisitor):
         s.expr.accept(self)
     
     def visit_return_stmt(self, s):
-        if self.locals is None:
+        if not self.locals:
             self.fail("'return' outside function", s)
         if s.expr:
             s.expr.accept(self)
@@ -465,7 +466,7 @@ class SemanticAnal(NodeVisitor):
             s.expr.accept(self)
     
     def visit_yield_stmt(self, s):
-        if self.locals is None:
+        if not self.locals:
             self.fail("'yield' outside function", s)
         if s.expr:
             s.expr.accept(self)
@@ -643,6 +644,23 @@ class SemanticAnal(NodeVisitor):
         expr.expr.accept(self)
         for i in range(len(expr.types)):
             expr.types[i] = self.anal_type(expr.types[i])
+
+    def visit_list_comprehension(self, expr):
+        expr.generator.accept(self)
+
+    def visit_generator_expr(self, expr):
+        self.enter()
+        expr.right_expr.accept(self)
+        # Bind index variables.
+        for n in expr.index:
+            self.analyse_lvalue(n)
+        if expr.condition:
+            expr.condition.accept(self)
+
+        # TODO analyze variable types (see visit_for_stmt)
+
+        expr.left_expr.accept(self)
+        self.leave()
     
     #
     # Helpers
@@ -654,9 +672,12 @@ class SemanticAnal(NodeVisitor):
                 return self.globals[name]
             else:
                 self.name_not_defined(name, ctx)
-        elif self.locals is not None and name in self.locals:
-            return self.locals[name]
-        elif self.class_tvars and name in self.class_tvars:
+                return None
+        elif self.locals:
+            for table in reversed(self.locals):
+                if name in table:
+                    return table[name]
+        if self.class_tvars and name in self.class_tvars:
             return self.class_tvars[name]
         elif name in self.globals:
             return self.globals[name]
@@ -667,6 +688,7 @@ class SemanticAnal(NodeVisitor):
                 if name in table:
                     return table[name]
             self.name_not_defined(name, ctx)
+            return None
     
     def lookup_qualified(self, name, ctx):
         if '.' not in name:
@@ -685,25 +707,25 @@ class SemanticAnal(NodeVisitor):
         return self.cur_mod_id + '.' + n
     
     def enter(self):
-        self.locals = SymbolTable()
+        self.locals.append(SymbolTable())
         self.global_decls.append(set())
     
     def leave(self):
-        self.locals = None
+        self.locals.pop()
         self.global_decls.pop()
     
     def add_var(self, v, ctx):
-        if self.locals is not None:
+        if self.locals:
             self.add_local(v, ctx)
         else:
             self.globals[v.name()] = SymbolTableNode(GDEF, v, self.cur_mod_id)
             v._full_name = self.qualified_name(v.name())
     
     def add_local(self, v, ctx):
-        if v.name() in self.locals:
+        if v.name() in self.locals[-1]:
             self.name_already_defined(v.name(), ctx)
         v._full_name = v.name()
-        self.locals[v.name()] = SymbolTableNode(LDEF, v)
+        self.locals[-1][v.name()] = SymbolTableNode(LDEF, v)
     
     def check_no_global(self, n, ctx, is_func=False):
         if n in self.globals:
