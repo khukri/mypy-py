@@ -36,6 +36,17 @@ class VoidRepr:
         self.void = void
 
 
+class CallableRepr:
+    """Representation of Callable."""
+    def __init__(self, func, langle, lparen, commas, rparen, rangle):
+        self.func = func
+        self.langle = langle
+        self.lparen = lparen
+        self.commas = commas
+        self.rparen = rparen
+        self.rangle = rangle
+
+
 class TypeVarRepr:
     """Representation of TypeVar."""
     def __init__(self, name):

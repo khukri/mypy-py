@@ -17,8 +17,6 @@ class TypeAnalyser(TypeVisitor):
         self.fail = fail_func
     
     def visit_unbound_type(self, t):
-        if t.name == 'func':
-            return self.anal_function_type(t)
         sym = self.lookup(t.name, t)
         if sym is not None:
             if sym.kind == TVAR:
@@ -63,16 +61,6 @@ class TypeAnalyser(TypeVisitor):
                                 t.line, t.repr)
         else:
             return t
-    
-    def anal_function_type(self, t):
-        a = []
-        for at in t.args[:-1]:
-            a.append(at.accept(self))
-        return Callable(a, [nodes.ARG_POS] * len(a), [None] * len(a),
-                        t.args[-1].accept(self),
-                        False,
-                        None,
-                        TypeVars([]), [], t.line, t.repr)
     
     def visit_any(self, t):
         return t

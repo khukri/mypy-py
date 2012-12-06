@@ -309,3 +309,17 @@ class TypeApplicationRepr:
         self.langle = langle
         self.commas = commas
         self.rangle = rangle
+
+
+class GeneratorExprRepr:
+    def __init__(self, for_tok, commas, in_tok, if_tok):
+        self.for_tok = for_tok
+        self.commas = commas
+        self.in_tok = in_tok
+        self.if_tok = if_tok
+
+
+class ListComprehensionRepr:
+    def __init__(self, lbracket, rbracket):
+        self.lbracket = lbracket
+        self.rbracket = rbracket

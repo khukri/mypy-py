@@ -9,7 +9,7 @@ from nodes import (
     Node, MemberExpr, IntExpr, StrExpr, BytesExpr, FloatExpr, OpExpr,
     UnaryExpr, IndexExpr, CastExpr, TypeApplication, ListExpr, TupleExpr,
     DictExpr, FuncExpr, SuperExpr, ParenExpr, SliceExpr, Context,
-    ListComprehension
+    ListComprehension, GeneratorExpr
 )
 from nodes import function_type, method_type
 import nodes
@@ -749,9 +749,18 @@ class ExpressionChecker:
         return self.named_type('builtins.slice')
 
     def visit_list_comprehension(self, e):
-        gen = e.generator
+        return self.check_generator_or_comprehension(
+            e.generator, 'builtins.list', '<list-comprehension>')
+
+    def visit_generator_expr(self, e):
+        return self.check_generator_or_comprehension(e, 'builtins.Iterator',
+                                                     '<generator>')
+    
+    def check_generator_or_comprehension(self, gen, type_name, id_for_messages):
+        """Type check a generator expression or a list comprehension."""
+        
         item_type = self.chk.analyse_iterable_item_type(gen.right_expr)
-        self.chk.analyse_index_variables(gen.index, False, item_type, e)
+        self.chk.analyse_index_variables(gen.index, False, item_type, gen)
 
         if gen.condition:
             self.accept(gen.condition)
@@ -762,13 +771,12 @@ class ExpressionChecker:
         constructor = Callable([tv],
                                [nodes.ARG_POS],
                                [None],
-                               self.chk.named_generic_type('builtins.list',
-                                                           [tv]),
+                               self.chk.named_generic_type(type_name, [tv]),
                                False,
-                               '<list-comprehension>',
+                               id_for_messages,
                                TypeVars([TypeVarDef('T', -1)]))
         return self.check_call(constructor,
-                               [gen.left_expr], [nodes.ARG_POS], e)
+                               [gen.left_expr], [nodes.ARG_POS], gen)
     
     #
     # Helpers

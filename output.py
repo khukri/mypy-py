@@ -435,6 +435,25 @@ class OutputVisitor(NodeVisitor):
         self.token(o.repr.langle)
         self.type_list(o.types, o.repr.commas)
         self.token(o.repr.rangle)
+
+    def visit_generator_expr(self, o):
+        r = o.repr
+        self.node(o.left_expr)
+        self.token(r.for_tok)
+        for i in range(len(o.index)):
+            self.node(o.types[i])
+            self.node(o.index[i])
+            self.token(r.commas[i])
+        self.token(r.in_tok)
+        self.node(o.right_expr)
+        if o.condition:
+            self.token(r.if_tok)
+            self.node(o.condition)
+
+    def visit_list_comprehension(self, o):
+        self.token(o.repr.lbracket)
+        self.node(o.generator)
+        self.token(o.repr.rbracket)
     
     # Types
     
@@ -547,10 +566,11 @@ class TypeOutputVisitor:
     
     def visit_callable(self, t):
         r = t.repr
-        self.tokens(r.components)
-        self.token(r.langle)
-        self.comma_list(t.arg_types + [t.ret_type], r.commas)
-        self.token(r.rangle)
+        self.tokens([r.func, r.langle])
+        t.ret_type.accept(self)
+        self.token(r.lparen)
+        self.comma_list(t.arg_types, r.commas)
+        self.tokens([r.rparen, r.rangle])
     
     def type_vars(self, v):
         if v and v.repr:

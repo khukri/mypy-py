@@ -1136,24 +1136,30 @@ class Parser:
             items[0] = self.parse_generator_expr(items[0])            
         rbracket = self.expect(']')
         if len(items) == 1 and isinstance(items[0], GeneratorExpr):
-            return ListComprehension(items[0])
+             list_comp = ListComprehension(items[0])
+             self.set_repr(list_comp, noderepr.ListComprehensionRepr(lbracket,
+                                                                     rbracket))
+             return list_comp
         else:
-            node = ListExpr(items)
-            self.set_repr(node, noderepr.ListExprRepr(lbracket, commas,
+            expr = ListExpr(items)
+            self.set_repr(expr, noderepr.ListExprRepr(lbracket, commas,
                                                       rbracket, none, none))
-            return node
+            return expr
     
     def parse_generator_expr(self, left_expr):
         for_tok = self.expect('for')
         index, types, commas = self.parse_for_index_variables()
-        self.expect('in')
+        in_tok = self.expect('in')
         right_expr = self.parse_expression_list()
         cond = None
+        if_tok = none
         if self.current_str() == 'if':
-            self.skip()
+            if_tok = self.skip()
             cond = self.parse_expression()
         gen = GeneratorExpr(left_expr, index, types, right_expr, cond)
         gen.set_line(for_tok)
+        self.set_repr(gen, noderepr.GeneratorExprRepr(for_tok, commas, in_tok,
+                                                      if_tok))
         return gen
     
     def parse_expression_list(self):
@@ -1671,12 +1677,16 @@ class Parser:
         return self.tok[i].string == '>' and self.tok[i + 1].string == '('
     
     def try_scan_type(self, i):
-        """Return the index of next token after type starting at token
-        index i as the first integer. The second integer is 1 if the
+        """Check if there seems to be a valid type at the token index.
+
+        Return the index of next token after type starting at token
+        index i as the first integer. The second integer is 1 if only the
         first > has been consumed from >>, 0 otherwise. Return -1 as
         the first integer if could not parse a type.
         """
         if isinstance(self.tok[i], Name):
+            if self.tok[i].string == 'func':
+                return self.try_scan_func_type(i + 1)
             while (self.tok[i + 1].string == '.'
                    and isinstance(self.tok[i + 2], Name)):
                 i += 2
@@ -1715,6 +1725,27 @@ class Parser:
                     return -1, 0
         else:
             return i, 0
+
+    def try_scan_func_type(self, i):
+        if self.tok[i].string == '<':
+            i, j = self.try_scan_type(i + 1)
+            if i >= 0:
+                if self.tok[i].string == '(':
+                    i += 1
+                    while self.tok[i].string != ')':
+                        i, j = self.try_scan_type(i)
+                        if j > 0:
+                            return -1, 0
+                        if self.tok[i].string != ',':
+                            break
+                        i += 1
+                    if self.tok[i].string == ')':
+                        i += 1
+                        if self.tok[i].string == '>':
+                            return self.try_scan_list_type(i + 1)
+                        elif self.tok[i].string == '>>':
+                            return i + 1, 1
+        return -1, 0
 
 
 class ParseError(Exception): pass
