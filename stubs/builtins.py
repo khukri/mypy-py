@@ -200,12 +200,19 @@ class float(float_t, int_t):
     # Operators
     
     float __add__(self, float x): pass
+    float __add__(self, int x): pass
     float __sub__(self, float x): pass
+    float __sub__(self, int x): pass
     float __mul__(self, float x): pass
+    float __mul__(self, int x): pass
     float __floordiv__(self, float x): pass
+    float __floordiv__(self, int x): pass
     float __truediv__(self, float x): pass
+    float __truediv__(self, int x): pass
     float __mod__(self, float x): pass
+    float __mod__(self, int x): pass
     float __pow__(self, float x): pass
+    float __pow__(self, int x): pass
     
     bool __eq__(self, object x): pass
     bool __ne__(self, object x): pass
@@ -241,8 +248,7 @@ class str(int_t, float_t, Sequence<str>):
     str expandtabs(self, int tabsize=8): pass
     int find(self, str sub, int start=0): pass
     int find(self, str sub, int start, int end): pass
-    # TODO keyword args
-    str format(self, any *args): pass
+    str format(self, any *args, any **kwargs): pass
     str format_map(self, Mapping<str, any> map): pass
     int index(self, str sub, int start=0): pass
     int index(self, str sub, int start, int end): pass
