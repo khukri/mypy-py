@@ -602,6 +602,22 @@ class TypeChecker(NodeVisitor):
                         not self.is_dynamic_function()):
                     self.fail(messages.RETURN_VALUE_EXPECTED, s)
     
+    def visit_yield_stmt(self, s):
+        return_type = self.return_types[-1]
+        if isinstance(return_type, Instance):
+            inst = return_type
+            if inst.typ.full_name() != 'builtins.Iterator':
+                self.fail(messages.INVALID_RETURN_TYPE_FOR_YIELD, s)
+                return None
+            expected_item_type = inst.args[0]
+        elif isinstance(return_type, Any):
+            expected_item_type = Any()
+        else:
+            self.fail(messages.INVALID_RETURN_TYPE_FOR_YIELD, s)
+            return None
+        actual_item_type = self.accept(s.expr, expected_item_type)
+        self.check_subtype(actual_item_type, expected_item_type, s)
+    
     def visit_if_stmt(self, s):
         """Type check an if statement."""
         for e in s.expr:
@@ -827,9 +843,6 @@ class TypeChecker(NodeVisitor):
 
     def visit_decorator(self, e):
         return self.msg.not_implemented('decorator', e)
-    
-    def visit_yield_stmt(self, s):
-        self.msg.not_implemented('yield statement', s)
     
     def visit_with_stmt(self, s):
         self.msg.not_implemented('with statement', s)
