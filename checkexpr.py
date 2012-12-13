@@ -88,17 +88,16 @@ class ExpressionChecker:
         # even if the type is known (in a dynamically typed function). This
         # way we get a more precise callee in dynamically typed functions.
         callee_type = self.chk.type_map[e.callee]
-        self.chk.store_type(e.callee, callee_type)
         return self.check_call_expr_with_callee_type(callee_type, e)
     
     def check_call_expr_with_callee_type(self, callee_type, e):
         """Type check call expression. The given callee type overrides
         the type of the callee expression.
-        """        
+        """
         return self.check_call(callee_type, e.args, e.arg_kinds, e,
-                               e.arg_names)
+                               e.arg_names, callable_node=e.callee)
     
-    def check_call(self, callee, args, arg_kinds, context, arg_names=None):
+    def check_call(self, callee, args, arg_kinds, context, arg_names=None, callable_node=None):
         """Type check a call.
 
         Also infer type arguments if the callee is a generic function.
@@ -108,6 +107,9 @@ class ExpressionChecker:
           args: actual argument expressions
           arg_kinds: contains nodes.ARG_* constant for each argument in args
             describing whether the argument is positional, *arg, etc.
+          arg_names: names of arguments (optional)
+          callable_node: associate the inferred callable type to this node,
+            if specified
         """
         is_var_arg = nodes.ARG_STAR in arg_kinds
         if isinstance(callee, Callable):
@@ -121,10 +123,8 @@ class ExpressionChecker:
             if callable.is_generic():
                 callable = self.infer_function_type_arguments_using_context(
                     callable)
-                arg_types = self.infer_arg_types_in_context2(
-                    callable, args, arg_kinds, formal_to_actual)
                 callable = self.infer_function_type_arguments(
-                    callable, arg_types, arg_kinds, formal_to_actual, context)
+                    callable, args, arg_kinds, formal_to_actual, context)
             
             arg_types = self.infer_arg_types_in_context2(
                 callable, args, arg_kinds, formal_to_actual)
@@ -134,7 +134,9 @@ class ExpressionChecker:
             
             self.check_argument_types(arg_types, arg_kinds, callable,
                                       formal_to_actual, context)
-            
+            if callable_node:
+                # Store the inferred callable type.
+                self.chk.store_type(callable_node, callable)
             return callable.ret_type
         elif isinstance(callee, Overloaded):
             # Type check arguments in empty context. They will be checked again
@@ -155,7 +157,7 @@ class ExpressionChecker:
         """Infer argument expression types using a callable type as context.
 
         For example, if callee argument 2 has type int[], infer the argument
-        exprsession with int[] type context.
+        expression with int[] type context.
         """
         res = []
         
@@ -213,7 +215,7 @@ class ExpressionChecker:
         # we are inferring right now. We must consider them as indeterminate
         # and they are not potential results; thus we replace them with the
         # None type. On the other hand, class type variables are valid results.
-        erased_ctx = replace_func_type_vars(ctx)
+        erased_ctx = replace_func_type_vars(ctx, NoneTyp())
         args = infer_type_arguments(callable.type_var_ids(), callable.ret_type,
                                     erased_ctx, self.chk.basic_types())
         # If all the inferred types are None types, do no type variable
@@ -228,22 +230,30 @@ class ExpressionChecker:
                 some_not_none = True
         if not some_not_none:
             return callable
-        return self.apply_generic_arguments(callable, args, [], None)
+        return self.apply_generic_arguments(callable, args, None)
     
-    def infer_function_type_arguments(self, callee_type, arg_types, arg_kinds, formal_to_actual, context):
+    def infer_function_type_arguments(self, callee_type, args, arg_kinds, formal_to_actual, context):
         """Infer the type arguments for a generic callee type.
 
+        Infer based on the types of arguments.
+
         Return a derived callable type that has the arguments applied (and
-        stored as implicit type arguments). If is_var_arg is True, the callee
-        uses varargs.
+        stored as implicit type arguments).
         """
-        inferred_args = infer_function_type_arguments(
-            callee_type, arg_types, arg_kinds, formal_to_actual,
-            self.chk.basic_types())
-        return self.apply_inferred_arguments(callee_type, inferred_args, [],
+        if not self.chk.is_dynamic_function():
+            arg_types = self.infer_arg_types_in_context2(
+                callee_type, args, arg_kinds, formal_to_actual)
+            inferred_args = infer_function_type_arguments(
+                callee_type, arg_types, arg_kinds, formal_to_actual,
+                self.chk.basic_types())
+        else:
+            # In dynamically typed functions use implicit 'any' types for
+            # type variables.
+            inferred_args = [Any()] * len(callee_type.variables.items)
+        return self.apply_inferred_arguments(callee_type, inferred_args,
                                              context)
     
-    def apply_inferred_arguments(self, callee_type, inferred_args, implicit_type_vars, context):
+    def apply_inferred_arguments(self, callee_type, inferred_args, context):
         """Apply inferred values of type arguments to a generic function.
 
         If implicit_type_vars are given, they correspond to the ids of
@@ -260,15 +270,14 @@ class ExpressionChecker:
             if not inferred_type:
                 # Could not infer a non-trivial type for a type variable.
                 self.msg.could_not_infer_type_arguments(
-                    callee_type, i + 1 - len(implicit_type_vars), context)
+                    callee_type, i + 1, context)
                 inferred_args = [Any()] * len(inferred_args)
         
         # Apply the inferred types to the function type. In this case the
         # return type must be Callable, since we give the right number of type
         # arguments.
         return self.apply_generic_arguments(callee_type,
-                                                      inferred_args,
-                                                      implicit_type_vars, None)
+                                                      inferred_args, None)
 
     def check_argument_count(self, callee, actual_types, actual_kinds, actual_names, formal_to_actual, context):
         """Check that the number of arguments to a function are valid.
@@ -428,27 +437,22 @@ class ExpressionChecker:
                     return False
         return True
     
-    def apply_generic_arguments(self, callable, types, implicit_type_vars, context):
+    def apply_generic_arguments(self, callable, types, context):
         """Apply generic type arguments to a callable type.
 
-        For example, applying int to 'def <T> (T) -> T' results in
+        For example, applying [int] to 'def <T> (T) -> T' results in
         'def [int] (int) -> int'. Here '[int]' is an implicit bound type
         variable.
         
         Note that each type can be None; in this case, it will not be applied.
         """
-        tvars = []
-        for v in implicit_type_vars:
-            # The name of type variable is not significant, so nil is fine.
-            tvars.append(TypeVarDef(None, v))
-        tvars.extend(callable.variables.items)
-        
+        tvars = callable.variables.items        
         if len(tvars) != len(types):
             self.msg.incompatible_type_application(len(tvars), len(types),
                                                    context)
             return Any()
         
-        # Create a map from type variable name to target type.
+        # Create a map from type variable id to target type.
         map = {}
         for i in range(len(tvars)):
             if types[i]:
@@ -473,11 +477,10 @@ class ExpressionChecker:
                         callable.bound_vars + bound_vars,
                         callable.line, callable.repr)
     
-    def apply_generic_arguments2(self, overload, types, implicit_type_vars, context):
+    def apply_generic_arguments2(self, overload, types, context):
         items = []
         for item in overload.items():
-            applied = self.apply_generic_arguments(
-                item, types, implicit_type_vars, context)
+            applied = self.apply_generic_arguments(item, types, context)
             if isinstance(applied, Callable):
                 items.append(applied)
             else:
@@ -625,17 +628,20 @@ class ExpressionChecker:
         """Type check a type application (expr<...>)."""
         expr_type = self.accept(tapp.expr)
         if isinstance(expr_type, Callable):
-            return self.apply_generic_arguments(expr_type,
-                                                tapp.types, [], tapp)
+            new_type = self.apply_generic_arguments(expr_type,
+                                                    tapp.types, tapp)
         elif isinstance(expr_type, Overloaded):
             overload = expr_type
+            # Only target items with the right number of generic type args.
             items = [c for c in overload.items()
                      if len(c.variables.items) == len(tapp.types)]
-            return self.apply_generic_arguments2(Overloaded(items),
-                                                 tapp.types, [], tapp)
+            new_type = self.apply_generic_arguments2(Overloaded(items),
+                                                     tapp.types, tapp)
         else:
             self.chk.fail(messages.INVALID_TYPE_APPLICATION_TARGET_TYPE, tapp)
-            return Any()
+            new_type = Any()
+        self.chk.type_map[tapp.expr] = new_type
+        return new_type
     
     def visit_list_expr(self, e):
         """Type check a list expression [...] or <t> [...]."""
@@ -735,8 +741,45 @@ class ExpressionChecker:
     
     def visit_func_expr(self, e):
         """Type check lambda expression."""
-        # TODO implement properly
-        return Any()
+        inferred_type = self.infer_lambda_type(e)
+        self.chk.check_func_item(e, type_override=inferred_type)
+        if inferred_type:
+            return inferred_type
+        elif e.typ:
+            ret_type = self.chk.type_map[e.expr()]
+            return replace_callable_return_type(e.typ.typ, ret_type)
+        else:
+            # Use default type for lambda.
+            # TODO infer return type?
+            return function_type(e)
+
+    def infer_lambda_type(self, e):
+        """Try to infer lambda expression type using context.
+
+        Return None if could not infer type.
+        """
+        ctx = self.chk.type_context[-1]
+        if not ctx or not isinstance(ctx, Callable):
+            return None
+        
+        # The context may have function type variables in it. We replace them
+        # since these are the type variables we are ultimately trying to infer;
+        # they must be considered as indeterminate.
+        ctx = replace_func_type_vars(ctx, Any())
+        
+        callable_ctx = ctx
+        
+        if callable_ctx.arg_kinds != e.arg_kinds:
+            # Incompatible context; cannot use it to infer types.
+            self.chk.fail(messages.CANNOT_INFER_LAMBDA_TYPE, e)
+            return None
+        
+        if not e.typ:
+            return callable_ctx
+        else:
+            # The lambda already has a type; only infer the return type.
+            return replace_callable_return_type(e.typ.typ,
+                                                callable_ctx.ret_type)
     
     def visit_super_expr(self, e):
         """Type check a super expression (non-lvalue)."""
@@ -1033,3 +1076,16 @@ def is_duplicate_mapping( mapping, actual_kinds):
         len(mapping) == 2 and
         actual_kinds[mapping[0]] == nodes.ARG_STAR and
         actual_kinds[mapping[1]] == nodes.ARG_STAR2)
+
+
+def replace_callable_return_type(c, new_ret_type):
+    """Return a copy of a callable type with a different return type."""
+    return Callable(c.arg_types,
+                    c.arg_kinds,
+                    c.arg_names,
+                    new_ret_type,
+                    c.is_type_obj(),
+                    c.name,
+                    c.variables,
+                    c.bound_vars,
+                    c.line)

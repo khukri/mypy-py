@@ -128,7 +128,7 @@ class TypeChecker(NodeVisitor):
     
     def visit_var_def(self, defn):
         """Type check a variable definition (of any kind: local,
-        member or local)."""
+        member or global)."""
         # Type check initializer.
         if defn.init:
             # There is an initializer.
@@ -177,19 +177,21 @@ class TypeChecker(NodeVisitor):
         if defn.info:
             self.check_method_override(defn)
     
-    def check_func_item(self, defn):
+    def check_func_item(self, defn, type_override=None):
         # We may be checking a function definition or an anonymous function. In
         # the first case, set up another reference with the precise type.
         fdef = None
         if isinstance(defn, FuncDef):
             fdef = defn
         
-        self.dynamic_funcs.append(defn.typ is None)
+        self.dynamic_funcs.append(defn.typ is None and not type_override)
         
         if fdef:
             self.errors.set_function(fdef.name())
         
         typ = function_type(defn)
+        if type_override:
+            typ = type_override
         if isinstance(typ, Callable):
             self.check_func_def(defn, typ)
         else:
@@ -222,7 +224,7 @@ class TypeChecker(NodeVisitor):
         # Push return type.
         self.return_types.append((typ).ret_type)
         
-        # Add arguments to symbol table.
+        # Store argument types.
         ctype = typ
         nargs = len(defn.args)
         for i in range(len(ctype.arg_types)):
@@ -489,8 +491,9 @@ class TypeChecker(NodeVisitor):
                     v.typ = Annotation(init_type, -1)
     
     def is_valid_inferred_type(self, typ):
-        """Is an inferred type invalid (e.g. the nil type or a type with a nil
-        component)?
+        """Is an inferred type invalid?
+
+        Examples include the None type or a type with a None component.
         """
         if is_same_type(typ, NoneTyp()):
             return False
@@ -562,7 +565,7 @@ class TypeChecker(NodeVisitor):
     
     def check_single_assignment(self, lvalue_type, index_lvalue, rvalue, context, msg=messages.INCOMPATIBLE_TYPES_IN_ASSIGNMENT):
         if lvalue_type:
-            rvalue_type = self.accept(rvalue, lvalue_type)      
+            rvalue_type = self.accept(rvalue, lvalue_type)
             self.check_subtype(rvalue_type, lvalue_type, context, msg)
         elif index_lvalue:
             self.check_indexed_assignment(index_lvalue, rvalue, context)

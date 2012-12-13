@@ -148,12 +148,13 @@ STR_CONTEXT = 1
 COMMENT_CONTEXT = 2
 
 
-def lex(s):
-    """Analyze s and return an array of token objects, the last of
-    which is always Eof.
+def lex( string):
+    """Analyze string and return an array of token objects.
+
+    The last token is always Eof.
     """
     l = Lexer()
-    l.lex(s)
+    l.lex(string)
     return l.tok
 
 
@@ -630,3 +631,15 @@ class Lexer:
                     else:
                         type = NON_ASCII_CHARACTER_IN_COMMENT
                 self.add_token(LexError('', type))
+
+
+import sys
+
+if __name__ == '__main__':
+    if len(sys.argv) != 2:
+        print('Usage: lex.py FILE')
+        sys.exit(2)
+    fnam = sys.argv[1]
+    s = open(fnam).read()
+    for t in lex(s):
+        print(t)

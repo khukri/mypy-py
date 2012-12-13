@@ -20,7 +20,7 @@ def solve_constraints( vars, constraints, basic):
         cmap[con.type_var] = a
     
     res = []
-    
+
     # Solve each type variable separately.
     for tvar in vars:
         bottom = None

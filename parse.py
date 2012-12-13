@@ -22,7 +22,7 @@ from nodes import (
 import nodes
 import noderepr
 from errors import Errors, CompileError
-from mtypes import Void, Typ, TypeVars, Callable, Any
+from mtypes import Void, Typ, TypeVars, Callable, Any, UnboundType
 from parsetype import (parse_type, parse_type_variables, parse_type_args,
                        TypeParseError)
 
@@ -402,9 +402,10 @@ class Parser:
                 noderepr.FuncArgsRepr(lparen, rparen, arg_names, commas,
                                       assigns, asterisk))
     
-    def build_func_annotation(self, ret_type, arg_types, kinds, names, type_vars, line):
+    def build_func_annotation(self, ret_type, arg_types, kinds, names, type_vars, line, is_default_ret=False):
         # Are there any type annotations?
-        if (ret_type or arg_types != [None] * len(arg_types)
+        if ((ret_type and not is_default_ret)
+                or arg_types != [None] * len(arg_types)
                 or type_vars.items):
             # Yes. Construct a type for the function signature.
             ret = None
@@ -1463,15 +1464,20 @@ class Parser:
         names = []
         for arg in args:
             names.append(arg.name())
-        
-        typ = self.build_func_annotation(None, arg_types, kinds, names,
-                                         TypeVars([]), lambda_tok.line)
+
+        # Use 'object' as the placeholder return type; it will be inferred
+        # later. We can't use 'any' since it could make type inference results
+        # less precise.
+        ret_type = Annotation(UnboundType('__builtins__.object'))
+        typ = self.build_func_annotation(ret_type, arg_types, kinds, names,
+                                         TypeVars([]), lambda_tok.line,
+                                         is_default_ret=True)
         
         colon = self.expect(':')
         
         expr = self.parse_expression(precedence[','])
         
-        body = Block([ExpressionStmt(expr)])
+        body = Block([ReturnStmt(expr).set_line(lambda_tok)])
         body.set_line(colon)
         
         node = FuncExpr(args, kinds, init, body, typ)
