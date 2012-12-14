@@ -1,7 +1,7 @@
 import checker
 from mtypes import (
     Typ, Any, NoneTyp, Void, TypeVisitor, Instance, UnboundType, ErrorType,
-    TypeVar, Callable, TupleType
+    TypeVar, Callable, TupleType, ErasedType
 )
 from subtypes import is_subtype, is_equivalent, map_instance_to_supertype
 
@@ -11,6 +11,9 @@ def join_types(s, t, basic):
         return s
     
     if isinstance(s, NoneTyp) and not isinstance(t, Void):
+        return t
+
+    if isinstance(s, ErasedType):
         return t
     
     return t.accept(TypeJoinVisitor(s, basic))
@@ -45,6 +48,9 @@ class TypeJoinVisitor(TypeVisitor):
             return self.s
         else:
             return self.default(self.s)
+    
+    def visit_erased_type(self, t):
+        return self.s
     
     def visit_type_var(self, t):
         if isinstance(self.s, TypeVar) and (self.s).id == t.id:

@@ -2,7 +2,7 @@
 
 from mtypes import (
     Typ, Any, Callable, Overloaded, NoneTyp, Void, TypeVarDef, TypeVars,
-    TupleType, Instance, TypeVar, TypeTranslator
+    TupleType, Instance, TypeVar, TypeTranslator, ErasedType
 )
 from nodes import (
     NameExpr, RefExpr, Var, FuncDef, OverloadedFuncDef, TypeInfo, CallExpr,
@@ -14,6 +14,7 @@ from nodes import (
 from nodes import function_type, method_type
 import nodes
 import checker
+import mtypes
 from sametypes import is_same_type
 from replacetvars import replace_func_type_vars, replace_type_vars
 from messages import MessageBuilder
@@ -142,7 +143,9 @@ class ExpressionChecker:
             # Type check arguments in empty context. They will be checked again
             # later in a context derived from the signature; these types are
             # only used to pick a signature variant.
+            self.msg.disable_errors()
             arg_types = self.infer_arg_types_in_context(None, args)
+            self.msg.enable_errors()
             
             target = self.overload_call_target(arg_types, is_var_arg,
                                                callee, context)
@@ -215,22 +218,17 @@ class ExpressionChecker:
         # we are inferring right now. We must consider them as indeterminate
         # and they are not potential results; thus we replace them with the
         # None type. On the other hand, class type variables are valid results.
-        erased_ctx = replace_func_type_vars(ctx, NoneTyp())
+        erased_ctx = replace_func_type_vars(ctx, ErasedType())
         args = infer_type_arguments(callable.type_var_ids(), callable.ret_type,
                                     erased_ctx, self.chk.basic_types())
-        # If all the inferred types are None types, do no type variable
-        # substition.
-        # TODO This is not nearly general enough. If a type has a None type
-        #      component we should not use it. Also if some types are not-None
-        #      we should only substitute them. Finally, using None types for
-        #      this might not be optimal.
-        some_not_none = False
-        for i in range(len(args)):
-            if not isinstance(args[i], NoneTyp):
-                some_not_none = True
-        if not some_not_none:
-            return callable
-        return self.apply_generic_arguments(callable, args, None)
+        # Only substite non-None and non-erased types.
+        new_args = []
+        for arg in args:
+            if isinstance(arg, NoneTyp) or has_erased_component(arg):
+                new_args.append(None)
+            else:
+                new_args.append(arg)
+        return self.apply_generic_arguments(callable, new_args, None)
     
     def infer_function_type_arguments(self, callee_type, args, arg_kinds, formal_to_actual, context):
         """Infer the type arguments for a generic callee type.
@@ -241,17 +239,90 @@ class ExpressionChecker:
         stored as implicit type arguments).
         """
         if not self.chk.is_dynamic_function():
+            # Disable type errors during type inference. There may be errors
+            # due to partial available context information at this time, but
+            # these errors can be safely ignored as the arguments will be
+            # inferred again later.
+            self.msg.disable_errors()
+            
             arg_types = self.infer_arg_types_in_context2(
                 callee_type, args, arg_kinds, formal_to_actual)
+        
+            self.msg.enable_errors()
+
+            arg_pass_nums = self.get_arg_infer_passes(
+                callee_type.arg_types, formal_to_actual, len(args))
+
+            pass1_args = []
+            for i, arg in enumerate(arg_types):
+                if arg_pass_nums[i] > 1:
+                    pass1_args.append(None)
+                else:
+                    pass1_args.append(arg)
+            
             inferred_args = infer_function_type_arguments(
-                callee_type, arg_types, arg_kinds, formal_to_actual,
+                callee_type, pass1_args, arg_kinds, formal_to_actual,
                 self.chk.basic_types())
+
+            if 2 in arg_pass_nums:
+                # Second pass of type inference.
+                (callee_type,
+                 inferred_args) = self.infer_function_type_arguments_pass2(
+                    callee_type, args, arg_kinds, formal_to_actual,
+                    inferred_args, context)
         else:
             # In dynamically typed functions use implicit 'any' types for
             # type variables.
             inferred_args = [Any()] * len(callee_type.variables.items)
         return self.apply_inferred_arguments(callee_type, inferred_args,
                                              context)
+
+    def infer_function_type_arguments_pass2(
+                                 self, callee_type, args, arg_kinds, formal_to_actual, inferred_args, context):
+        """Perform second pass of generic function type argument inference.
+
+        The second pass is needed for arguments with types such as func<s(t)>,
+        where both s and t are type variables, when the actual argument is a
+        lambda with inferred types.  The idea is to infer the type variable t
+        in the first pass (based on the types of other arguments).  This lets
+        us infer the argument and return type of the lambda expression and
+        thus also the type variable s in this second pass.
+
+        Return (the callee with type vars applied, inferred actual arg types).
+        """
+        # None or erased types in inferred types mean that there was not enough
+        # information to infer the argument. Replace them with None values so
+        # that they are not applied yet below.
+        for i, arg in enumerate(inferred_args):
+            if isinstance(arg, NoneTyp) or isinstance(arg, ErasedType):
+                inferred_args[i] = None
+
+        callee_type = self.apply_generic_arguments(
+            callee_type, inferred_args, context)
+        arg_types = self.infer_arg_types_in_context2(
+            callee_type, args, arg_kinds, formal_to_actual)
+
+        inferred_args = infer_function_type_arguments(
+            callee_type, arg_types, arg_kinds, formal_to_actual,
+            self.chk.basic_types())
+
+        return callee_type, inferred_args
+
+    def get_arg_infer_passes(self, arg_types, formal_to_actual, num_actuals):
+        """Return pass numbers for args for two-pass argument type inference.
+
+        For each actual, the pass number is either 1 (first pass) or 2 (second
+        pass).
+
+        Two-pass argument type inference primarily lets us infer lambdas
+        better.
+        """
+        res = [1] * num_actuals
+        for i, arg in enumerate(arg_types):
+            if arg.accept(ArgInferSecondPassQuery()):
+                for j in formal_to_actual[i]:
+                    res[j] = 2
+        return res
     
     def apply_inferred_arguments(self, callee_type, inferred_args, context):
         """Apply inferred values of type arguments to a generic function.
@@ -453,27 +524,28 @@ class ExpressionChecker:
             return Any()
         
         # Create a map from type variable id to target type.
-        map = {}
-        for i in range(len(tvars)):
+        id_to_type = {}
+        for i, tv in enumerate(tvars):
             if types[i]:
-                map[tvars[i].id] = types[i]
+                id_to_type[tv.id] = types[i]
+
+        # Apply arguments to argument types.
+        arg_types = [expand_type(at, id_to_type) for at in callable.arg_types]
         
-        arg_types = []
-        for at in callable.arg_types:
-            arg_types.append(expand_type(at, map))
-        
-        bound_vars = []
-        for tv in tvars:
-            if tv.id in map:
-                bound_vars.append((tv.id, map[tv.id]))
+        bound_vars = [(tv.id, id_to_type[tv.id])
+                      for tv in tvars
+                      if tv.id in id_to_type]
+
+        # The callable may retain some type vars if only some were applied.
+        remaining_tvars = [tv for tv in tvars if tv.id not in id_to_type]
         
         return Callable(arg_types,
                         callable.arg_kinds,
                         callable.arg_names,
-                        expand_type(callable.ret_type, map),
+                        expand_type(callable.ret_type, id_to_type),
                         callable.is_type_obj(),
                         callable.name,
-                        TypeVars([]),
+                        TypeVars(remaining_tvars),
                         callable.bound_vars + bound_vars,
                         callable.line, callable.repr)
     
@@ -743,10 +815,10 @@ class ExpressionChecker:
         """Type check lambda expression."""
         inferred_type = self.infer_lambda_type(e)
         self.chk.check_func_item(e, type_override=inferred_type)
+        ret_type = self.chk.type_map[e.expr()]
         if inferred_type:
-            return inferred_type
+            return replace_callable_return_type(inferred_type, ret_type)
         elif e.typ:
-            ret_type = self.chk.type_map[e.expr()]
             return replace_callable_return_type(e.typ.typ, ret_type)
         else:
             # Use default type for lambda.
@@ -764,8 +836,10 @@ class ExpressionChecker:
         
         # The context may have function type variables in it. We replace them
         # since these are the type variables we are ultimately trying to infer;
-        # they must be considered as indeterminate.
-        ctx = replace_func_type_vars(ctx, Any())
+        # they must be considered as indeterminate. We use ErasedType since it
+        # does not affect type inference results (it is for purposes like this
+        # only).
+        ctx = replace_func_type_vars(ctx, ErasedType())
         
         callable_ctx = ctx
         
@@ -1089,3 +1163,40 @@ def replace_callable_return_type(c, new_ret_type):
                     c.variables,
                     c.bound_vars,
                     c.line)
+
+
+class ArgInferSecondPassQuery(mtypes.TypeQuery):
+    """Query whether an argument type should be inferred in the second pass.
+
+    The result is True if the type has a type variable in a callable return
+    type anywhere. For example, the result for func<t()> is True if t is a
+    type variable.
+    """    
+    def __init__(self):
+        super().__init__(False, mtypes.ANY_TYPE_STRATEGY)
+
+    def visit_callable(self, t):
+        return self.query_types(t.arg_types) or t.accept(HasTypeVarQuery())
+
+
+class HasTypeVarQuery(mtypes.TypeQuery):
+    """Visitor for querying whether a type has a type variable component."""
+    def __init__(self):
+        super().__init__(False, mtypes.ANY_TYPE_STRATEGY)
+
+    def visit_type_var(self, t):
+        return True
+
+
+def has_erased_component(t):
+    return t is not None and t.accept(HasErasedComponentsQuery())
+
+
+class HasErasedComponentsQuery(mtypes.TypeQuery):
+    """Visitor for querying whether a type has an erased component."""
+    def __init__(self):
+        super().__init__(False, mtypes.ANY_TYPE_STRATEGY)
+
+    def visit_erased_type(self, t):
+        return True
+    

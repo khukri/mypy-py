@@ -1,6 +1,6 @@
 from mtypes import (
     Typ, Any, UnboundType, TypeVisitor, ErrorType, Void, NoneTyp, Instance,
-    TypeVar, Callable, TupleType, Overloaded
+    TypeVar, Callable, TupleType, Overloaded, ErasedType
 )
 from nodes import TypeInfo
 from expandtype import expand_type
@@ -8,7 +8,8 @@ from expandtype import expand_type
 
 def is_subtype( left, right):
     """Is 'left' subtype of 'right'?"""
-    if isinstance(right, Any) or isinstance(right, UnboundType):
+    if (isinstance(right, Any) or isinstance(right, UnboundType)
+            or isinstance(right, ErasedType)):
         return True
     else:
         return left.accept(SubtypeVisitor(right))
@@ -39,6 +40,9 @@ class SubtypeVisitor(TypeVisitor):
     
     def visit_none_type(self, left):
         return not isinstance(self.right, Void)
+    
+    def visit_erased_type(self, left):
+        return True
     
     def visit_instance(self, left):
         if isinstance(self.right, Instance):

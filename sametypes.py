@@ -1,6 +1,6 @@
 from mtypes import (
     Typ, UnboundType, ErrorType, Any, NoneTyp, Void, TupleType, Callable,
-    TypeVar, Instance, TypeVisitor
+    TypeVar, Instance, TypeVisitor, ErasedType
 )
 
 
@@ -45,6 +45,10 @@ class SameTypeVisitor(TypeVisitor):
     
     def visit_none_type(self, left):
         return isinstance(self.right, NoneTyp)
+    
+    def visit_erased_type(self, left):
+        # Should not get here.
+        raise RuntimeError()
     
     def visit_instance(self, left):
         return (isinstance(self.right, Instance) and

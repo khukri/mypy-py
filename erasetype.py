@@ -1,6 +1,6 @@
 from mtypes import (
     Typ, TypeVisitor, UnboundType, ErrorType, Any, Void, NoneTyp, Instance,
-    TypeVar, Callable, TupleType, Overloaded
+    TypeVar, Callable, TupleType, Overloaded, ErasedType
 )
 import checker
 
@@ -38,6 +38,10 @@ class EraseTypeVisitor(TypeVisitor):
     
     def visit_none_type(self, t):
         return t
+    
+    def visit_erased_type(self, t):
+        # Should not get here.
+        raise RuntimeError()
     
     def visit_instance(self, t):
         return Instance(t.typ, [Any()] * len(t.args), t.line, t.repr)
