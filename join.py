@@ -153,7 +153,7 @@ def join_instances_via_supertype(t, s, allow_interfaces, basic):
 
 def join_instances_as_interface(t, s, basic):
     """Compute join of two instances with a preference to an interface
-    type result.  Return Object if no common interface type is found
+    type result.  Return object if no common interface type is found
     and ErrorType if the result type is ambiguous.
     
     Interface type result is expected in the following cases:
@@ -169,7 +169,7 @@ def join_instances_as_interface(t, s, basic):
     for ti in t_ifaces:
         for si in s_ifaces:
             # Join of two interface types is always an Instance type (either
-            # another interface type or Object), so the cast below is safe.
+            # another interface type or object), so the cast below is safe.
             j = join_types(ti, si, basic)
             if j.typ != basic.object.typ:
                 res.append(j)
@@ -178,12 +178,12 @@ def join_instances_as_interface(t, s, basic):
         # Unambiguous, non-trivial result.
         return res[0]
     elif len(res) == 0:
-        # Return the trivial result (Object).
+        # Return the trivial result (object).
         return basic.object
     else:
         # Two or more potential candidate results.
         
-        # Calculate the join of the results. If it is Object, the result is
+        # Calculate the join of the results. If it is object, the result is
         # ambigous (ErrorType).
         j = res[0]
         for i in range(1, len(res)):
